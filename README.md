@@ -1,6 +1,6 @@
 # PCPanel Revive
 
-A fast, lightweight replacement for the official PCPanel software on Windows 10/11. It works with the **PCPanel Pro**, the **PCPanel Mini** and the original wooden PCPanel.
+A free, open-source, lightweight replacement for the official PCPanel software on Windows 10/11. It works with the **PCPanel Pro**, the **PCPanel Mini** and the original wooden PCPanel.
 
 It lives in your tray as a single ~2 MB exe using about 14 MB of RAM, with no measurable CPU when idle. It has no Java, no services and no installer.
 
@@ -196,4 +196,6 @@ The USB protocol details come from the community projects [nvdweem/PCPanel](http
 
 ## License
 
-Copyright © 2026. All rights reserved. (Licensing to be decided.)
+PCPanel Revive is free software, released under the [GNU General Public License v3.0](LICENSE) or (at your option) any later version. You can use, study, share and change it. If you distribute a modified version, it has to stay open source under the same license.
+
+It comes with no warranty.
