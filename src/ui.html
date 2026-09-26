@@ -1,0 +1,1354 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PCPanel Revive</title>
+<style>
+:root{--bg:#141418;--panel:#1d1d23;--line:#2c2c35;--text:#e8e8ee;--dim:#9a9aa8;--acc:#4f9dff;--ok:#34c759;--bad:#ff453a;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 "Segoe UI",system-ui,sans-serif;user-select:none}
+input,textarea{user-select:text}
+header{position:sticky;top:0;z-index:2;display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 16px;background:#18181d;border-bottom:1px solid var(--line)}
+h1{font-size:16px;margin:0 8px 0 0}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--bad);display:inline-block}
+.dot.on{background:var(--ok)}
+nav{display:flex;gap:4px;padding:10px 16px 0}
+nav button{background:none;border:none;border-bottom:2px solid transparent;color:var(--dim);border-radius:0}
+nav button.sel{color:var(--text);border-color:var(--acc)}
+main{padding:16px;max-width:1400px}
+button,select,input{font:inherit;color:var(--text);background:#26262e;border:1px solid var(--line);border-radius:6px;padding:5px 9px}
+button{cursor:pointer}button:hover{border-color:#44444f}
+button:disabled{opacity:.5;cursor:default}
+button.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+button.x{padding:2px 7px;color:var(--dim)}
+button.small{padding:2px 8px;font-size:12px}
+input[type=color]{padding:0;width:34px;height:28px}
+input[type=number]{width:80px}
+input[type=checkbox]{accent-color:var(--acc)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;transition:border-color .3s}
+.card.hot{border-color:var(--acc)}
+.card h3{margin:0 0 8px;font-size:14px;display:flex;gap:8px;align-items:center}
+.card h3 input{flex:1;min-width:0}
+.bar{height:4px;background:#2a2a33;border-radius:2px;margin-bottom:10px}.bar i{display:block;height:100%;background:var(--acc);border-radius:2px}
+.row{display:flex;gap:8px;align-items:center;margin:6px 0;flex-wrap:wrap}
+.row>label:first-child{width:74px;color:var(--dim);font-size:12px}
+.sub{border-top:1px solid var(--line);margin-top:10px;padding-top:6px}
+.sub>b{font-size:12px;color:var(--dim);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.act{background:#23232a;border-radius:8px;padding:6px 8px;margin:6px 0}
+.chips{display:flex;flex-wrap:wrap;gap:4px;align-items:center;flex:1;min-width:0}
+.chip{display:inline-flex;align-items:center;gap:5px;background:#2f2f3a;border-radius:12px;padding:2px 4px 2px 6px;font-size:12px;max-width:100%}
+.chip img{width:16px;height:16px}
+.chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip button{border:none;background:none;padding:0 4px;color:var(--dim)}
+.chips input{flex:1;min-width:80px;padding:3px 7px}
+.hint{color:var(--dim);font-size:12px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;max-width:640px;margin-bottom:12px}
+.panel h2{font-size:14px;margin:0 0 8px}
+#log div{font:12px Consolas,monospace;padding:2px 0;border-bottom:1px solid var(--line);user-select:text}
+#status{color:var(--dim);font-size:12px}
+.spacer{flex:1}
+dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:0;width:min(520px,92vw);max-height:84vh;overflow:hidden}
+dialog::backdrop{background:#0009}
+.pk{display:flex;flex-direction:column;max-height:84vh}
+.pk-head{padding:14px 14px 8px;display:flex;flex-direction:column;gap:8px}
+.pk-head h2{margin:0;font-size:15px}
+.pk-list{overflow-y:auto;overflow-x:hidden;padding:0 8px 8px;flex:1}
+.pk-sec{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em;margin:10px 6px 4px}
+.pk-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:1px solid transparent;border-radius:8px;padding:6px 8px}
+.pk-item:hover{background:#26262e}
+.pk-item.on{border-color:var(--acc);background:#1f2a3a}
+.pk-item img,.pk-item .ph{width:24px;height:24px;flex:none}
+.pk-item .ph{border-radius:6px;background:#33333d;display:grid;place-items:center;font-size:12px;color:var(--dim)}
+.pk-item .nm{flex:1;min-width:0}
+.pk-item .nm div{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pk-item .ex{font-size:11px;color:var(--dim)}
+.pk-item .tick{color:var(--acc);font-weight:700;visibility:hidden}
+.pk-item.on .tick{visibility:visible}
+.badge{font-size:10px;color:var(--ok);border:1px solid #2f5f3a;border-radius:8px;padding:0 6px}
+.pk-foot{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--line);flex-wrap:wrap}
+.ctl-layout{display:grid;grid-template-columns:minmax(340px,540px) minmax(0,1fr);gap:28px;align-items:start}
+@media (max-width:860px){.ctl-layout{grid-template-columns:1fr}.device-wrap{position:static}}
+.device-wrap{position:sticky;top:112px}
+#device svg{width:100%;height:auto;display:block;max-height:calc(100vh - 150px)}
+#device .hit{fill:transparent;stroke:transparent;stroke-width:2;transition:fill .15s}
+#device .ctl{cursor:pointer}
+#device .ctl:hover .hit{fill:#ffffff0d}
+#device .ctl.sel .hit{fill:#4f9dff1f;stroke:var(--acc)}
+#device .tag{font:700 15px "Segoe UI",sans-serif;text-anchor:middle}
+#device .tag.big{font-size:19px}
+#device .cap{font:12px "Segoe UI",sans-serif;fill:#c8c8d2}
+#device .cap.unset{fill:#6a6a76;font-style:italic}
+#device .glyph{font-size:11px}
+#device .logo{font:900 22px "Segoe UI",sans-serif;text-anchor:middle}
+#device .logo.sm{font-size:9px;letter-spacing:.2em}
+#device svg.anim-rainbow .led,#device svg.anim-wave .led{animation:hue var(--speed) linear infinite;animation-delay:calc(var(--i) * -.25s)}
+#device svg.anim-breath .led{animation:breath var(--speed) ease-in-out infinite}
+@keyframes hue{to{filter:hue-rotate(360deg)}}
+@keyframes breath{50%{opacity:.25}}
+#device svg g.fx-pulse .led{filter:none;animation:apulse var(--p) ease-in-out infinite}
+#device svg g.fx-blink .led{filter:none;animation:ablink var(--p) steps(1) infinite}
+@keyframes apulse{0%,100%{opacity:.12}50%{opacity:1}}
+@keyframes ablink{0%{opacity:1}50%{opacity:0}}
+.alerts{display:flex;flex-direction:column;gap:14px}
+.alert.off{opacity:.55}
+.alert .ed-head{gap:10px}
+.alert .ed-head h2{font-size:16px}
+.alert-on input{width:18px;height:18px}
+.light-picks{display:flex;flex-wrap:wrap;gap:4px}
+.light-picks .pick{min-width:44px;padding:4px 8px;font-size:12px}
+.light-picks .pick.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.badge-live[hidden]{display:none}
+.badge-live{font-size:11px;color:#ffc45c;border:1px solid #6b5520;border-radius:8px;padding:1px 8px}
+.center{text-align:center;margin-top:6px}
+.editor{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:4px 22px 16px;max-width:660px}
+.ed-head{display:flex;align-items:center;gap:14px;padding:14px 0 10px}
+.ed-head h2{margin:0;font-size:20px;white-space:nowrap}
+.ed-label{flex:1;min-width:0;background:transparent;border-color:transparent;font-size:15px}
+.ed-label:hover,.ed-label:focus{background:#26262e;border-color:var(--line)}
+.sec{padding:12px 0;border-top:1px solid var(--line)}
+.sec h3{margin:0 0 6px;font-size:13px;font-weight:600;color:var(--dim)}
+.editor .row>label:first-child{width:96px;flex:none}
+.editor .act{background:none;border-radius:0;padding:4px 0;margin:0}
+.editor .act + .act{border-top:1px dashed var(--line)}
+.act-top{display:flex;align-items:center;gap:8px}
+.act-top select{flex:1;max-width:320px}
+button.link{background:none;border:none;color:var(--acc);padding:4px 0}
+button.link:hover{text-decoration:underline}
+.folds{border-top:1px solid var(--line);margin-top:4px}
+.fold{border-bottom:1px solid var(--line)}
+.fold:last-child{border-bottom:none}
+.fold summary{display:flex;align-items:center;gap:10px;padding:11px 0;cursor:pointer;list-style:none;font-size:13px;font-weight:600;color:var(--dim)}
+.fold summary::-webkit-details-marker{display:none}
+.fold summary::before{content:'›';display:inline-block;width:10px;transition:transform .15s}
+.fold[open] summary::before{transform:rotate(90deg)}
+.fold summary .sum{margin-left:auto;font-weight:400;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fold-body{padding:0 0 12px 20px}
+.swatches{display:inline-flex;gap:4px;vertical-align:middle}
+.swatches i{width:14px;height:14px;border-radius:4px;display:inline-block;border:1px solid #0006}
+.swatches i.mute{border-radius:50%}
+.notice{display:flex;align-items:center;gap:10px;margin:14px 16px 0;padding:12px 12px 12px 16px;border:1px solid #2d4a73;background:#17243a;border-radius:10px;max-width:1100px}
+.notice[hidden]{display:none}
+.notice .nt-body{flex:1}
+.notice button{height:34px;min-width:34px;padding:0 16px;display:inline-grid;place-items:center;flex:none}
+.notice button.x{padding:0;width:34px;font-size:16px;color:var(--dim);background:#26262e;border:1px solid var(--line)}
+.notice ul{margin:6px 0 0;padding-left:18px;color:var(--dim);font-size:12px}
+
+.combo{position:relative;display:inline-flex;align-items:center;min-width:200px;max-width:100%;vertical-align:middle}
+.combo.strict{justify-content:space-between;gap:12px;text-align:left}
+.combo.strict .val{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.combo .chev{color:var(--dim);font-size:11px;flex:none}
+.combo.free .chev{position:absolute;right:10px;cursor:pointer}
+.combo.free input{width:100%;padding-right:28px}
+.combo.open,.combo.free.open input{border-color:var(--acc)}
+.combo input.recording{border-color:#ff453a;color:#ff8a80}
+.pop{position:fixed;z-index:50;display:flex;flex-direction:column;background:#202027;border:1px solid #3a3a46;border-radius:10px;box-shadow:0 14px 36px #000a;padding:6px;max-width:min(460px,92vw)}
+.pop-search{margin:0 0 6px;width:100%}
+.pop-list{overflow-y:auto;min-height:0}
+.pop .grp{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em;padding:8px 10px 4px}
+.pop .it{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;cursor:pointer;white-space:nowrap}
+.pop .it.hi{background:#2c3850}
+.pop .it .ck{width:14px;color:var(--acc);flex:none}
+.pop .it .lb{overflow:hidden;text-overflow:ellipsis}
+.pop .it .v{margin-left:auto;padding-left:16px;font:11px Consolas,monospace;color:var(--dim)}
+.pop .it.run .lb{color:var(--acc)}
+.pop .empty{padding:8px 10px;color:var(--dim)}
+.ed-status{display:flex;align-items:center;gap:10px;margin:-4px 0 10px;font-size:12px;color:var(--dim)}
+.ed-status[hidden]{display:none}
+.ed-status .warn{color:#ffc45c}
+.ed-status .lvl{flex:1;max-width:220px;height:4px;border-radius:2px;background:#2a2a33;overflow:hidden}
+.ed-status .lvl i{display:block;height:100%;background:var(--acc)}
+button.x.try{color:var(--acc)}
+.hint.indent{margin:-4px 0 8px 104px}
+.bk-time{min-width:200px}
+button.icon{width:34px;padding:5px 0;font-size:16px;line-height:1}
+button.icon:disabled{opacity:.35}
+#status{min-width:110px;text-align:right}
+.displays{display:flex;flex-direction:column;gap:4px}
+.editor .row>input:not([type]),.editor .row>.combo.free{flex:1;min-width:220px}
+textarea{flex:1;min-width:220px;font:12px Consolas,monospace;color:var(--text);background:#26262e;border:1px solid var(--line);border-radius:6px;padding:6px 9px;resize:vertical}
+.presets-panel{max-width:1100px}
+.presets{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-top:10px}
+.preset{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;padding:10px;border-radius:10px;background:#202027}
+.preset:hover{border-color:var(--acc)}
+.preset .hint{line-height:1.3}
+.pv-wrap{width:100%;margin-bottom:4px}
+.pv{position:relative;height:64px;border-radius:8px;background:#141418;padding:8px 10px;display:flex;justify-content:space-between;align-items:center}
+.pv-knobs{display:flex;flex-direction:column;align-items:center;gap:5px}
+.pv-knobs div{display:flex;gap:5px}
+.pv-knobs i{width:14px;height:14px;border-radius:50%;box-shadow:0 0 6px #fff2}
+.pv-sliders{display:flex;gap:6px;height:46px}
+.pv-sliders b{width:7px;border-radius:3px}
+.pv-logo{position:absolute;left:50%;bottom:6px;width:10px;height:5px;border-radius:2px}
+.pv-wave{height:64px;border-radius:8px;background:linear-gradient(90deg,#ff3b30,#ffcc00,#34c759,#00c7be,#007aff,#af52de,#ff3b30);background-size:200% 100%;animation:pvwave 4s linear infinite}
+@keyframes pvwave{to{background-position:200% 0}}
+#selftest{width:min(620px,94vw)}
+.st{padding:16px 18px 18px}
+.st-head{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+.st-head h2{margin:0;font-size:16px}
+.st-head .x{margin-left:auto}
+.st-now{font-size:28px;font-weight:700;margin:6px 0 10px}
+.st .lvl{height:6px;border-radius:3px;background:#2a2a33;overflow:hidden;flex:1}
+.st .lvl i{display:block;height:100%;background:var(--acc)}
+.st-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 18px;margin:10px 0 14px}
+.st-item{display:flex;align-items:center;gap:10px;font-size:13px}
+.st-item>span:first-child{width:92px}
+.st-item b{width:14px;color:var(--ok)}
+.st-item.ok .lvl i{background:var(--ok)}
+#device svg.wood .cap{fill:#3b2412}
+#device svg.wood .cap.unset{fill:#7a5a3a}
+#device svg.wood .glyph{filter:brightness(.25)}
+</style>
+</head>
+<body>
+<header>
+  <h1>PCPanel Revive</h1>
+  <span class="dot" id="dot"></span><span id="conn" class="hint"></span>
+  <span class="spacer"></span>
+  <label class="hint">Profile</label>
+  <span id="profileBox"></span>
+  <button id="pNew">New</button><button id="pRen">Rename</button><button id="pDel">Delete</button>
+  <span id="status"></span>
+  <button id="undo" class="icon" title="Undo (Ctrl+Z)" disabled>↶</button><button id="redo" class="icon" title="Redo (Ctrl+Y)" disabled>↷</button>
+</header>
+<nav id="tabs"></nav>
+<div id="notice" class="notice" hidden></div>
+<main id="main"></main>
+<input type="file" id="importFile" accept=".json" hidden>
+<dialog id="picker"></dialog>
+<dialog id="selftest"></dialog>
+<input type="file" id="profileFile" accept=".json" hidden>
+<input type="file" id="browse" accept=".exe" multiple hidden>
+<script>
+const $ = s => document.querySelector(s);
+const KNOBS = 5;
+const TURN = {none:[], app:[['apps','apps']], device:[['device','text','devices']], obs:[['source','text']],
+  voicemeeter:[['param','text',null,'Strip[0].Gain'],['min_db','num'],['max_db','num']], command:[['cmd','text',null,'uses {value} 0-100']], brightness:[]};
+const TURN_LABEL = {none:'Nothing', app:'App volume', device:'Device volume', obs:'OBS source volume', voicemeeter:'Voicemeeter parameter', command:'Run command', brightness:'LED brightness'};
+const ACT = {mute_turn:[], mute_app:[['apps','apps']], mute_device:[['device','text','devices']], set_default:[['device','text','devices']],
+  cycle_default:[['devices','list','devices']], keys:[['keys','text','keys','ctrl+shift+m']], run:[['cmd','text',null,'notepad.exe']], kill:[['process','app']],
+  profile:[['name','text','profiles']], next_profile:[], obs_scene:[['scene','text']], obs_mute:[['source','text']], obs_record:[], obs_stream:[],
+  voicemeeter:[['script','text',null,'Strip[0].Mute=1;']],
+  focus_app:[['app','app'],['launch','text',null,'optional - path or command to start it'],['toggle','check',null,'Minimize it if it\'s already in front']],
+  open:[['target','text',null,'https://..., a folder, or a file']], type_text:[['text','text',null,'Text to type']],
+  mute_mic:[], lock_pc:[], monitor_off:[['displays','displays']], lights_toggle:[],
+  set_app_volume:[['apps','apps'],['level','pct']], set_device_volume:[['device','text','devices'],['level','pct']],
+  mute_others:[['apps','apps']],
+  http:[['method','text','methods'],['url','text',null,'http://homeassistant.local:8123/api/services/light/toggle'],
+    ['headers','area',null,'Authorization: Bearer ...\nContent-Type: application/json'],['body','area',null,'{"entity_id": "light.desk"}']],
+  app_output:[['apps','apps'],['device','text','devices']]};
+const ACT_DEFAULTS = {set_app_volume: {level: 20}, set_device_volume: {level: 50}, http: {method: 'POST'}, app_output: {device: 'default'}};
+const ACT_LABEL = {mute_turn:'Mute what this dial controls', mute_app:'Toggle app mute', mute_device:'Toggle device mute', set_default:'Set default device',
+  cycle_default:'Cycle default devices', keys:'Keystroke / media key', run:'Run program', kill:'Kill process', profile:'Switch profile', next_profile:'Next profile',
+  obs_scene:'OBS: switch scene', obs_mute:'OBS: toggle mute', obs_record:'OBS: toggle recording', obs_stream:'OBS: toggle stream', voicemeeter:'Voicemeeter script',
+  focus_app:'Focus or open app', open:'Open website, file or folder', type_text:'Type text', mute_mic:'Toggle microphone mute',
+  lock_pc:'Lock PC', monitor_off:'Turn displays off/on', lights_toggle:'Turn panel lights on/off',
+  set_app_volume:'Set app volume to...', set_device_volume:'Set device volume to...', mute_others:'Focus mode: mute all other apps',
+  http:'Web request (Home Assistant, webhooks...)', app_output:'Send app to audio device'};
+const SPECIAL = {focused: ['Focused window', 'Whatever app is in front'], system: ['System sounds', 'Windows notification sounds'], unmapped: ['Everything else', 'Every app not on another control']};
+
+let cfg = null, dirty = false, tab = 'controls', lastValues = [], lastCfgJson = '', appInfo = {};
+
+function h(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k.startsWith('on')) e.addEventListener(k.slice(2), v); else if (v !== undefined && v !== null && v !== false) e.setAttribute(k, v === true ? '' : v);
+  }
+  for (const k of kids.flat(9)) if (k != null && k !== false) e.append(k);
+  return e;
+}
+const put = (el, ...k) => el.replaceChildren(...k.flat(9).filter(x => x != null && x !== false));
+const toHost = m => window.ipc && window.ipc.postMessage(m);
+const setDirty = d => { dirty = d; toHost(d ? 'dirty' : 'clean'); };
+const touch = () => { if (previewModel) { $('#status').textContent = 'Preview - changes aren\'t saved'; drawDevice(); return; } setDirty(true); $('#status').textContent = 'Saving...'; drawDevice(); clearTimeout(saveTimer); saveTimer = setTimeout(autosave, 500); };
+let lastSaveAt = 0, saveTimer = null, saving = false, lastSaved = null, history = [], future = [], autostart = false;
+const prof = () => cfg.profiles[cfg.active];
+const row = (label, ...inputs) => h('div', {class: 'row'}, h('label', {}, label), ...inputs);
+const normExe = s => { s = s.trim().replace(/^"|"$/g, '').split(/[\\/]/).pop().toLowerCase(); return !s || s.includes('.') || SPECIAL[s] ? s : s + '.exe'; };
+
+// ---- searchable dropdown (replaces <select> and <datalist>) ----
+// options: [{value, label, group?, hint?, run?}]  run = special item that performs an action instead of picking.
+let openCombo = null;
+function closeCombo() {
+  if (!openCombo) return;
+  openCombo.pop.remove();
+  openCombo.anchor.classList.remove('open');
+  openCombo = null;
+}
+document.addEventListener('mousedown', e => {
+  if (openCombo && !openCombo.pop.contains(e.target) && !openCombo.anchor.contains(e.target)) closeCombo();
+}, true);
+document.addEventListener('scroll', e => { if (openCombo && !openCombo.pop.contains(e.target)) closeCombo(); }, true);
+window.addEventListener('resize', closeCombo);
+
+function comboList(anchor, options, query, current, onPick, opts = {}) {
+  if (!openCombo || openCombo.anchor !== anchor) {
+    closeCombo();
+    const pop = h('div', {class: 'pop', role: 'listbox'});
+    document.body.append(pop);
+    openCombo = {anchor, pop, idx: 0, items: [], search: null};
+    anchor.classList.add('open');
+    if (opts.search) {
+      const s = h('input', {class: 'pop-search', placeholder: 'Search...', spellcheck: 'false', autocomplete: 'off'});
+      s.oninput = () => comboList(anchor, options, s.value, current, onPick, opts);
+      s.onkeydown = e => { comboKeys(e, () => closeCombo()); };
+      pop.append(s);
+      openCombo.search = s;
+      s.focus();
+    }
+  }
+  const {pop} = openCombo;
+  const q = query.trim().toLowerCase();
+  const order = [...new Set(options.map(o => o.group || ''))];
+  const hits = options.filter(o => o.run || !q || o.label.toLowerCase().includes(q) || String(o.value).toLowerCase().includes(q) || (o.group || '').toLowerCase().includes(q))
+    .map((o, n) => [o, n]).sort((a, b) => order.indexOf(a[0].group || '') - order.indexOf(b[0].group || '') || a[1] - b[1]).map(x => x[0]);
+  const list = h('div', {class: 'pop-list'});
+  const items = [];
+  let group = null;
+  for (const o of hits) {
+    if (o.group && o.group !== group) { group = o.group; list.append(h('div', {class: 'grp'}, group)); }
+    const it = h('div', {class: 'it' + (o.value === current && !o.run ? ' sel' : '') + (o.run ? ' run' : ''), role: 'option',
+      onmousedown: e => e.preventDefault(), onclick: () => onPick(o), onmousemove: () => hi(items.indexOf(it))},
+      h('span', {class: 'ck'}, o.value === current && !o.run ? '✓' : ''), h('span', {class: 'lb'}, o.label),
+      opts.free && (o.hint || (o.label !== o.value && !o.run)) ? h('span', {class: 'v'}, o.hint || o.value) : null);
+    it._o = o;
+    items.push(it);
+    list.append(it);
+  }
+  if (opts.free && q && !hits.some(o => o.label.toLowerCase() === q || String(o.value).toLowerCase() === q)) {
+    const it = h('div', {class: 'it run', onmousedown: e => e.preventDefault(), onclick: () => onPick({value: query.trim(), label: query.trim()})},
+      h('span', {class: 'ck'}), h('span', {class: 'lb'}, `Use \"${query.trim()}\"`));
+    it._o = {value: query.trim(), label: query.trim()};
+    items.push(it);
+    list.append(it);
+  }
+  if (!items.length) list.append(h('div', {class: 'empty'}, 'No matches'));
+  pop.querySelector('.pop-list')?.remove();
+  pop.append(list);
+  openCombo.items = items;
+  const selIdx = items.findIndex(i => i._o.value === current && !i._o.run);
+  // Highlight the best match: a label that starts with the query, else the first hit.
+  const starts = items.findIndex(i => !i._o.run && i._o.label.toLowerCase().startsWith(q));
+  hi(q ? (starts >= 0 ? starts : items.findIndex(i => !i._o.run)) : Math.max(0, selIdx));
+  // Place under the anchor, or above it when there's no room below.
+  const r = anchor.getBoundingClientRect();
+  pop.style.minWidth = r.width + 'px';
+  pop.style.left = Math.min(r.left, innerWidth - pop.offsetWidth - 8) + 'px';
+  const below = innerHeight - r.bottom - 12, above = r.top - 12;
+  const up = below < 220 && above > below;
+  pop.style.maxHeight = Math.min(360, up ? above : below) + 'px';
+  pop.style.top = (up ? r.top - 4 - pop.offsetHeight : r.bottom + 4) + 'px';
+  function hi(i) {
+    if (!openCombo) return;
+    openCombo.items.forEach(x => x.classList.remove('hi'));
+    openCombo.idx = Math.max(-1, Math.min(i, openCombo.items.length - 1));
+    const el = openCombo.items[openCombo.idx];
+    if (el) { el.classList.add('hi'); el.scrollIntoView({block: 'nearest'}); }
+  }
+  openCombo.hi = hi;
+}
+// Arrow/Enter/Esc handling shared by both kinds. Returns true if the key was handled.
+function comboKeys(e, onEnterNoItem) {
+  if (!openCombo) return false;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); openCombo.hi(openCombo.idx + (e.key === 'ArrowDown' ? 1 : -1)); return true; }
+  if (e.key === 'Escape') { e.preventDefault(); closeCombo(); return true; }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const it = openCombo.items[openCombo.idx];
+    if (it) it.click(); else onEnterNoItem();
+    return true;
+  }
+  return false;
+}
+
+// Strict: pick one of the options (a nicer <select>).
+function combo(get, set, options, {placeholder = '', search} = {}) {
+  const lbl = h('span', {class: 'val'});
+  const show = () => { const o = options.find(o => o.value === get()); lbl.textContent = o ? o.label : (get() || placeholder); };
+  show();
+  const btn = h('button', {type: 'button', class: 'combo strict'}, lbl, h('span', {class: 'chev'}, '▾'));
+  const open = () => comboList(btn, options, '', get(), o => { closeCombo(); set(o.value); show(); btn.focus(); }, {search: search ?? options.length > 8});
+  btn.onclick = () => openCombo && openCombo.anchor === btn ? closeCombo() : open();
+  btn.onkeydown = e => {
+    if (comboKeys(e, closeCombo)) return;
+    if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+  };
+  return btn;
+}
+
+// Free: type anything, with filtered suggestions.
+function comboFree(get, set, options, {placeholder = '', clearOnPick = false, record = false} = {}) {
+  const labelOf = v => (options.find(o => o.value === v) || {}).label;
+  const inp = h('input', {class: 'combo-in', spellcheck: 'false', autocomplete: 'off', placeholder});
+  const wrap = h('div', {class: 'combo free'}, inp, h('span', {class: 'chev'}, '▾'));
+  const show = () => { inp.value = clearOnPick ? '' : (labelOf(get()) || get() || ''); };
+  show();
+  const commit = raw => {
+    const t = raw.trim();
+    if (!t && clearOnPick) return;
+    const o = options.find(o => o.label.toLowerCase() === t.toLowerCase() || String(o.value).toLowerCase() === t.toLowerCase());
+    const v = o ? o.value : t;
+    if (v !== get() || clearOnPick) set(v);
+    show();
+  };
+  const all = record ? [{label: '⏺  Record a shortcut...', run: 'record', value: '\0rec'}, ...options] : options;
+  const pick = o => {
+    closeCombo();
+    if (o.run === 'record') return recordKeys(inp, v => { set(v); show(); });
+    set(o.value); show();
+    if (!clearOnPick) inp.blur();
+  };
+  const open = q => comboList(wrap, all, q, get(), pick, {free: true});
+  inp.onfocus = () => { if (inp._recording) return; inp._fresh = true; inp.select(); open(''); };
+  // Keep the whole value selected after the focusing click, so typing replaces it.
+  inp.onmouseup = e => { if (inp._fresh) { e.preventDefault(); inp._fresh = false; } };
+  inp.oninput = () => open(inp.value);
+  inp.onkeydown = e => {
+    if (e.key === 'Escape') { e.preventDefault(); show(); closeCombo(); inp.blur(); return; }
+    if (!comboKeys(e, () => { commit(inp.value); closeCombo(); })) { if (e.key === 'ArrowDown') open(inp.value); }
+  };
+  inp.onblur = () => setTimeout(() => {
+    if (inp._recording) return;
+    if (document.activeElement !== inp) { commit(inp.value); if (openCombo && openCombo.anchor === wrap) closeCombo(); }
+  }, 120);
+  wrap.querySelector('.chev').onmousedown = e => { e.preventDefault(); inp.focus(); };
+  return wrap;
+}
+
+// Capture the next key combo pressed, e.g. ctrl+shift+m.
+function recordKeys(inp, done) {
+  inp._recording = true;
+  const prev = inp.value;
+  inp.value = '';
+  inp.placeholder = 'Press a key combo... (Esc cancels)';
+  inp.classList.add('recording');
+  inp.focus();
+  const names = {Space: 'space', Enter: 'enter', Tab: 'tab', Backspace: 'backspace', Delete: 'delete', Insert: 'insert', Home: 'home', End: 'end',
+    PageUp: 'pgup', PageDown: 'pgdn', ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', PrintScreen: 'printscreen',
+    MediaPlayPause: 'play_pause', MediaTrackNext: 'next', MediaTrackPrevious: 'prev', MediaStop: 'stop',
+    AudioVolumeMute: 'mute', AudioVolumeUp: 'vol_up', AudioVolumeDown: 'vol_down'};
+  const finish = v => {
+    window.removeEventListener('keydown', onKey, true);
+    inp._recording = false;
+    inp.classList.remove('recording');
+    inp.placeholder = '';
+    if (v) done(v); else inp.value = prev;
+    inp.blur();
+  };
+  const onKey = e => {
+    e.preventDefault(); e.stopPropagation();
+    if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) {
+      inp.value = [e.ctrlKey && 'ctrl', e.shiftKey && 'shift', e.altKey && 'alt', e.metaKey && 'win'].filter(Boolean).join('+') + '+...';
+      return;
+    }
+    if (e.code === 'Escape' && !e.ctrlKey && !e.shiftKey && !e.altKey) return finish(null);
+    const key = /^Key[A-Z]$/.test(e.code) ? e.code.slice(3).toLowerCase() : /^Digit\d$/.test(e.code) ? e.code.slice(5)
+      : /^F\d+$/.test(e.code) ? e.code.toLowerCase() : e.code === 'Escape' ? 'esc' : names[e.code];
+    if (!key) { inp.value = 'That key isn\'t supported - try another'; return; }
+    finish([e.ctrlKey && 'ctrl', e.shiftKey && 'shift', e.altKey && 'alt', e.metaKey && 'win', key].filter(Boolean).join('+'));
+  };
+  window.addEventListener('keydown', onKey, true);
+}
+
+// Suggestion lists for free fields.
+const KEY_OPTIONS = [
+  ...[['play_pause', 'Play / Pause'], ['next', 'Next track'], ['prev', 'Previous track'], ['stop', 'Stop'], ['mute', 'Mute (system)'],
+    ['vol_up', 'Volume up'], ['vol_down', 'Volume down']].map(([value, label]) => ({value, label, group: 'Media keys'})),
+  ...[['win+d', 'Show desktop'], ['alt+tab', 'Switch window'], ['win+shift+s', 'Screenshot (Snip)'], ['printscreen', 'Print Screen'],
+    ['win+alt+k', 'Mute mic in Teams/Windows'], ['ctrl+shift+m', 'Ctrl + Shift + M']].map(([value, label]) => ({value, label, group: 'Windows'})),
+  ...[13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24].map(n => ({value: 'f' + n, label: 'F' + n, group: 'Free keys (bind these in other apps)'})),
+];
+let deviceList = [];
+const deviceOptions = () => [
+  {value: 'default', label: 'Default output', group: 'Follow Windows defaults'},
+  {value: 'default_capture', label: 'Default input (mic)', group: 'Follow Windows defaults'},
+  {value: 'default_comm', label: 'Default communications output', group: 'Follow Windows defaults'},
+  {value: 'default_comm_capture', label: 'Default communications mic', group: 'Follow Windows defaults'},
+  ...deviceList.filter(d => !d.capture).map(d => ({value: d.name, label: d.name, group: 'Outputs', hint: ' '})),
+  ...deviceList.filter(d => d.capture).map(d => ({value: d.name, label: d.name, group: 'Inputs', hint: ' '})),
+];
+const listOptions = list => list === 'keys' ? KEY_OPTIONS : list === 'devices' ? deviceOptions()
+  : list === 'profiles' ? Object.keys(cfg.profiles).map(n => ({value: n, label: n}))
+  : list === 'methods' ? ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map(m => ({value: m, label: m})) : [];
+const ACT_GROUP = {mute_turn: 'Audio', mute_app: 'Audio', mute_device: 'Audio', set_default: 'Audio', cycle_default: 'Audio',
+  keys: 'Keyboard & apps', run: 'Keyboard & apps', kill: 'Keyboard & apps', profile: 'Profiles', next_profile: 'Profiles',
+  obs_scene: 'OBS', obs_mute: 'OBS', obs_record: 'OBS', obs_stream: 'OBS', voicemeeter: 'Voicemeeter',
+  mute_mic: 'Audio', focus_app: 'Keyboard & apps', open: 'Keyboard & apps', type_text: 'Keyboard & apps',
+  lock_pc: 'System', monitor_off: 'System', lights_toggle: 'Panel',
+  set_app_volume: 'Audio', set_device_volume: 'Audio', mute_others: 'Audio', app_output: 'Audio', http: 'Web & smart home'};
+
+function text(o, k, list, ph) {
+  if (list) return comboFree(() => o[k] ?? '', v => { o[k] = v; touch(); }, listOptions(list), {placeholder: ph, record: list === 'keys'});
+  return h('input', {value: o[k] ?? '', placeholder: ph, spellcheck: 'false', oninput: e => { o[k] = e.target.value; touch(); }});
+}
+function area(o, k, ph) {
+  const t = h('textarea', {rows: 2, placeholder: ph, spellcheck: 'false', oninput: e => { o[k] = e.target.value; touch(); }});
+  t.value = o[k] ?? '';
+  return t;
+}
+function num(o, k, min, max, step = 1) {
+  return h('input', {type: 'number', value: o[k] ?? 0, min, max, step, oninput: e => { o[k] = +e.target.value; touch(); }});
+}
+function check(o, k, label) {
+  return h('label', {}, h('input', {type: 'checkbox', checked: !!o[k], onchange: e => { o[k] = e.target.checked; touch(); }}), ' ', label);
+}
+function color(o, k) {
+  return h('input', {type: 'color', value: o[k] || '#000000', oninput: e => { o[k] = e.target.value; touch(); }});
+}
+function select(o, k, opts, onchange, groups) {
+  const options = Object.entries(opts).map(([value, label]) => ({value, label, group: groups && groups[value]}));
+  return combo(() => o[k], v => { if (v === o[k]) return; o[k] = v; touch(); onchange && onchange(); }, options);
+}
+function chips(o, k, list) {
+  o[k] = o[k] || [];
+  const wrap = h('div', {class: 'chips'});
+  const draw = () => {
+    put(wrap, o[k].map((v, i) => h('span', {class: 'chip'}, h('span', {}, v), h('button', {title: 'Remove', onclick: () => { o[k].splice(i, 1); touch(); draw(); }}, '×'))),
+      comboFree(() => '', v => { if (v && !o[k].includes(v)) { o[k].push(v); touch(); draw(); } }, listOptions(list), {placeholder: 'add...', clearOnPick: true}));
+  };
+  draw();
+  return wrap;
+}
+
+// ---- apps: chips with icons, typed/pasted names, and the picker ----
+function appLook(exe) {
+  if (SPECIAL[exe]) return {name: SPECIAL[exe][0], icon: ''};
+  return appInfo[exe] || {name: exe, icon: ''};
+}
+function appIcon(exe, cls) {
+  const a = appLook(exe);
+  return a.icon ? h('img', {src: a.icon, alt: ''}) : h('span', {class: cls || 'ph'}, SPECIAL[exe] ? '★' : (a.name[0] || '?').toUpperCase());
+}
+function appChips(o, k) {
+  o[k] = o[k] || [];
+  const wrap = h('div', {class: 'chips'});
+  const add = raw => {
+    let n = 0;
+    for (const part of raw.split(/[,;\n]+/)) { const e = normExe(part); if (e && !o[k].includes(e)) { o[k].push(e); n++; } }
+    if (n) { touch(); draw(); }
+  };
+  const draw = () => {
+    put(wrap, o[k].map((v, i) => h('span', {class: 'chip', title: v}, appLook(v).icon ? h('img', {src: appLook(v).icon, alt: ''}) : null, h('span', {}, appLook(v).name),
+        h('button', {title: 'Remove', onclick: () => { o[k].splice(i, 1); touch(); draw(); }}, '×'))),
+      h('input', {placeholder: 'type or paste exe...', onkeydown: e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); add(e.target.value); e.target.value = ''; } },
+        onpaste: e => { e.preventDefault(); add(e.clipboardData.getData('text')); }, onblur: e => { add(e.target.value); e.target.value = ''; }}),
+      h('button', {class: 'small', onclick: () => openPicker({multi: true, has: x => o[k].includes(x), toggle: x => {
+        const i = o[k].indexOf(x); i < 0 ? o[k].push(x) : o[k].splice(i, 1); touch(); draw(); }})}, 'Pick...'));
+  };
+  draw();
+  return wrap;
+}
+function appOne(o, k) {
+  const inp = h('input', {value: o[k] ?? '', placeholder: 'app.exe', oninput: e => { o[k] = e.target.value; touch(); }});
+  return h('div', {class: 'chips'}, inp, h('button', {class: 'small', onclick: () => openPicker({multi: false, special: false, has: x => normExe(o[k] || '') === x,
+    toggle: x => {
+      o[k] = x; inp.value = x;
+      const found = pickerApps.find(a => a.exe === x);
+      if ('type' in o && o.type === 'focus_app' && found && found.path) o.launch = found.path;
+      touch(); if (o.type === 'focus_app') drawEditor();
+    }})}, 'Pick...'));
+}
+
+let pickerOpts = null, pickerApps = [], pickerQuery = '';
+async function loadApps() {
+  try {
+    pickerApps = await (await fetch('/api/apps')).json();
+    for (const a of pickerApps) appInfo[a.exe] = {name: a.name, icon: a.icon};
+  } catch (e) {}
+}
+function openPicker(opts) {
+  pickerOpts = {special: true, ...opts};
+  pickerQuery = '';
+  drawPicker();
+  $('#picker').showModal();
+  loadApps().then(drawPicker);
+}
+function pickerChoose(exe) {
+  pickerOpts.toggle(exe);
+  if (!pickerOpts.multi) $('#picker').close(); else drawPicker();
+}
+function drawPicker() {
+  const q = pickerQuery.toLowerCase();
+  const match = a => !q || a.name.toLowerCase().includes(q) || a.exe.includes(q);
+  const item = (exe, name, sub, badge) => h('button', {class: 'pk-item' + (pickerOpts.has(exe) ? ' on' : ''), onclick: () => pickerChoose(exe)},
+    appIcon(exe), h('div', {class: 'nm'}, h('div', {}, name), h('div', {class: 'ex'}, sub)), badge ? h('span', {class: 'badge'}, 'audio') : null, h('span', {class: 'tick'}, '✓'));
+  const audio = pickerApps.filter(a => a.audio && match(a)), other = pickerApps.filter(a => !a.audio && match(a));
+  const special = pickerOpts.special ? Object.entries(SPECIAL).filter(([k, [n]]) => !q || n.toLowerCase().includes(q) || k.includes(q)) : [];
+  const search = h('input', {placeholder: 'Search apps...', value: pickerQuery, oninput: e => { pickerQuery = e.target.value; const pos = e.target.selectionStart; drawPicker(); const s = $('#pk-search'); s.focus(); s.setSelectionRange(pos, pos); }, id: 'pk-search'});
+  const pointBtn = h('button', {onclick: async e => {
+    const b = e.target; b.disabled = true; b.textContent = 'Now click the app\'s window...';
+    try { const r = await (await fetch('/api/pick')).json(); toHost('focus'); if (r.exe) { await loadApps(); pickerChoose(r.exe); } else b.textContent = 'Nothing picked - try again'; }
+    finally { b.disabled = false; if (b.textContent.startsWith('Now')) b.textContent = 'Point at a window'; }
+  }}, 'Point at a window');
+  put($('#picker'), h('div', {class: 'pk'},
+    h('div', {class: 'pk-head'}, h('h2', {}, pickerOpts.multi ? 'Choose apps' : 'Choose an app'), search),
+    h('div', {class: 'pk-list'},
+      special.length ? [h('div', {class: 'pk-sec'}, 'Special'), special.map(([k, [n, d]]) => item(k, n, d))] : null,
+      audio.length ? [h('div', {class: 'pk-sec'}, 'Playing audio'), audio.map(a => item(a.exe, a.name, a.exe, true))] : null,
+      other.length ? [h('div', {class: 'pk-sec'}, 'Other running apps'), other.map(a => item(a.exe, a.name, a.exe))] : null,
+      !pickerApps.length ? h('div', {class: 'hint', style: 'padding:8px'}, 'Loading apps...') : null,
+      q && normExe(q) && !pickerApps.some(a => a.exe === normExe(q)) && !SPECIAL[normExe(q)]
+        ? [h('div', {class: 'pk-sec'}, 'Use typed name'), item(normExe(q), normExe(q), 'not running right now')] : null),
+    h('div', {class: 'pk-foot'},
+      h('button', {onclick: () => $('#browse').click()}, 'Browse for .exe...'),
+      pointBtn,
+      h('span', {class: 'spacer'}),
+      h('button', {class: 'pri', onclick: () => $('#picker').close()}, 'Done'))));
+  if (document.activeElement === document.body) search.focus();
+}
+$('#browse').onchange = e => {
+  for (const f of e.target.files) { const exe = normExe(f.name); if (pickerOpts.multi ? !pickerOpts.has(exe) : true) pickerChoose(exe); }
+  e.target.value = '';
+};
+
+function fields(o, spec) {
+  const nice = k => ({url: 'URL', level: 'Level', min_db: 'Min dB', max_db: 'Max dB', cmd: 'Command', keys: 'Keys'}[k] || k[0].toUpperCase() + k.slice(1));
+  return spec.map(([k, kind, list, ph]) => row(kind === 'check' ? '' : kind === 'displays' ? 'Displays' : nice(k),
+    kind === 'pct' ? [num(o, k, 0, 100), '%'] : kind === 'area' ? area(o, k, ph) : kind === 'displays' ? displayPicker(o, k) : kind === 'check' ? check(o, k, ph) : kind === 'apps' ? appChips(o, k) : kind === 'app' ? appOne(o, k) : kind === 'list' ? chips(o, k, list) : kind === 'num' ? num(o, k) : text(o, k, list, ph)));
+}
+// ---- controls tab: device picture + single-control editor ----
+let sel = 0, muted = [], levels = [], present = [], peaks = [], alertsOn = [], openFolds = new Set();
+// ?preview=mini shows another model's layout; nothing is saved while previewing.
+const previewModel = new URLSearchParams(location.search).get('preview');
+let model = previewModel || 'pro';
+const isPro = () => model === 'pro';
+// The 2017 wooden original has no lights.
+const hasLights = () => model !== 'original';
+const LIGHTS = ['k1', 'k2', 'k3', 'k4', 'k5', 's1', 's2', 's3', 's4', 'logo'];
+// Mini: one row of four, each labeled above like the printed "VOLUME n".
+const MINI_KNOBS = [[82, 132], [194, 132], [306, 132], [418, 132]];
+// The active alert drawn on LED i (0-8 = controls, 9 = logo), if any.
+const alertFor = i => (cfg.alerts || []).find((a, n) => alertsOn[n] && (a.lights || []).includes(LIGHTS[i]));
+const fx = a => a ? {cls: ` fx-${a.effect || 'pulse'}`, style: `--p:${a.period_ms || 1200}ms;`} : {cls: '', style: ''};
+const ctlName = i => i < KNOBS ? 'Knob ' + (i + 1) : 'Slider ' + (i - KNOBS + 1);
+const ctlShort = i => i < KNOBS ? 'K' + (i + 1) : 'S' + (i - KNOBS + 1);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+const hex = c => /^#[0-9a-f]{6}$/i.test(c || '') ? c : '#000000';
+function mix(a, b, t) {
+  const p = x => [1, 3, 5].map(i => parseInt(hex(x).slice(i, i + 2), 16));
+  const [x, y] = [p(a), p(b)];
+  return '#' + x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, '0')).join('');
+}
+const OFF = '#2b2b33';
+
+// What a control drives, for captions: {name, exe?, glyph?}
+function target(c) {
+  const t = c.turn;
+  if (t.type === 'app' && t.apps && t.apps.length && !SPECIAL[t.apps[0]]) {
+    const more = t.apps.length > 1 ? ` +${t.apps.length - 1}` : '';
+    return {name: appLook(t.apps[0]).name + more, exe: t.apps[0]};
+  }
+  if (t.type === 'device') {
+    const d = (t.device || 'default').toLowerCase();
+    return {name: {default: 'Speakers', default_capture: 'Microphone', default_comm: 'Comms output', default_comm_capture: 'Comms mic'}[d] || t.device,
+      glyph: d.includes('capture') || d.includes('mic') ? 'mic' : 'speaker'};
+  }
+  if (t.type === 'obs') return {name: 'OBS: ' + (t.source || '?'), glyph: 'dot'};
+  if (t.type === 'voicemeeter') return {name: t.param || 'Voicemeeter', glyph: 'dot'};
+  if (t.type === 'command') return {name: 'Command', glyph: 'dot'};
+  if (t.type === 'brightness') return {name: 'Brightness', glyph: 'sun'};
+  if (t.type === 'app' && t.apps && SPECIAL[t.apps[0]]) return {name: SPECIAL[t.apps[0]][0], glyph: 'star'};
+  const a = c.press && c.press[0];
+  if (a && a.type === 'run') {
+    const exe = ((a.cmd || '').match(/([^\\/"]+\.exe)/i) || [])[1];
+    if (exe) return {name: appLook(exe.toLowerCase()).name, exe: exe.toLowerCase()};
+  }
+  if (a && a.type === 'keys') {
+    const k = {play_pause: 'Play/Pause', next: 'Next track', prev: 'Previous track', stop: 'Stop', mute: 'Mute', vol_up: 'Volume up', vol_down: 'Volume down'}[a.keys];
+    return {name: k || a.keys || 'Keystroke', glyph: 'dot'};
+  }
+  if (a && a.type === 'focus_app' && a.app) return {name: appLook(a.app).name, exe: a.app};
+  if (a && a.type === 'mute_mic') return {name: 'Mic mute', glyph: 'mic'};
+  if (a && a.type === 'mute_others') return {name: 'Focus mode', glyph: 'star'};
+  if (a && ['set_app_volume', 'app_output'].includes(a.type) && a.apps && a.apps.length) return {name: appLook(a.apps[0]).name, exe: a.apps[0]};
+  if (a) return {name: ACT_LABEL[a.type], glyph: 'dot'};
+  return {name: 'Not set', glyph: ''};
+}
+
+// LED color(s) the panel should be showing for control i at raw value v.
+function ledOf(i, v) {
+  const l = prof().lighting, c = prof().controls[i];
+  const al = alertFor(i);
+  if (al) return {solid: al.color, alert: al};
+  if (l.mode === 'color') return {solid: l.color};
+  if (l.mode !== 'custom') return {anim: true};
+  let lt = c.light;
+  if (muted[i] && lt.mute_color) lt = {mode: 'static', color: lt.mute_color};
+  if (lt.mode === 'static') return {solid: lt.color};
+  if (lt.mode === 'gradient' && i < KNOBS) return {solid: mix(lt.color, lt.color2, v / 255)};
+  if (lt.mode === 'meter') return i < KNOBS ? {solid: mix('#000000', lt.color, 0.06 + 0.94 * (peaks[i] || 0))} : {from: lt.color, to: lt.color2, fill: peaks[i] || 0};
+  if (lt.mode === 'level') return i < KNOBS ? {solid: mix(lt.color, lt.color2, levels[i] || 0)} : {from: lt.color, to: lt.color2, fill: levels[i] || 0};
+  if (lt.mode === 'gradient') return {from: lt.color, to: lt.color2};
+  if (lt.mode === 'volume') return {from: lt.color, to: lt.color2, fill: v / 255};
+  return {solid: OFF};
+}
+
+// 14x14 line icons for captions.
+const GLYPHS = {
+  speaker: '<path d="M2 5h3l4-3v10l-4-3H2z" fill="#c8c8d2"/><path d="M11 4.5a4 4 0 0 1 0 5" stroke="#c8c8d2" stroke-width="1.4" fill="none"/>',
+  mic: '<rect x="5" y="1" width="4" height="8" rx="2" fill="#c8c8d2"/><path d="M3 7a4 4 0 0 0 8 0M7 11v2" stroke="#c8c8d2" stroke-width="1.4" fill="none"/>',
+  star: '<path d="M7 1l1.8 3.8 4.2.5-3.1 2.9.8 4.1L7 10.3 3.3 12.3l.8-4.1L1 5.3l4.2-.5z" fill="#c8c8d2"/>',
+  sun: '<circle cx="7" cy="7" r="3" fill="#c8c8d2"/><path d="M7 0v2M7 12v2M0 7h2M12 7h2M2 2l1.4 1.4M10.6 10.6L12 12M2 12l1.4-1.4M10.6 3.4L12 2" stroke="#c8c8d2" stroke-width="1.2"/>',
+  dot: '<circle cx="7" cy="7" r="3" fill="#c8c8d2"/>',
+};
+const SLIDER_X = [92, 197, 303, 408];
+const textWidth = (() => {
+  const ctx = document.createElement('canvas').getContext('2d');
+  ctx.font = '12px "Segoe UI", sans-serif';
+  return t => ctx.measureText(t).width;
+})();
+const KNOB_POS = [[190, 98], [310, 98], [130, 224], [250, 224], [370, 224]];
+function deviceSvg() {
+  const p = prof(), l = p.lighting, v = i => lastValues[i] || 0;
+  const animHue = i => `hsl(${(i * 40 + l.hue * 1.4) % 360} 90% 55%)`;
+  const col = (led, i) => led.anim ? animHue(i) : led.solid;
+  const pt = (cx, cy, r, deg) => [cx + r * Math.sin(deg * Math.PI / 180), cy - r * Math.cos(deg * Math.PI / 180)];
+  const arc = (cx, cy, r, a0, a1) => {
+    const [x0, y0] = pt(cx, cy, r, a0), [x1, y1] = pt(cx, cy, r, a1);
+    return `M${x0} ${y0}A${r} ${r} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${x1} ${y1}`;
+  };
+  const caption = (i, x, y, w) => {
+    const t = target(p.controls[i]), icon = t.exe && appLook(t.exe).icon;
+    const label = p.controls[i].label || t.name;
+    const iw = icon || t.glyph ? 18 : 0, room = w - iw;
+    let txt = label;
+    while (txt.length > 1 && textWidth(txt) > room) txt = txt.slice(0, -2) + '...';
+    const tw = textWidth(txt);
+    const x0 = x - (iw + tw) / 2;
+    const unset = (p.controls[i].turn.type === 'none' && !p.controls[i].press.length) || present[i] === false;
+    return `<g><title>${esc(label)}</title>` + (icon ? `<image href="${icon}" x="${x0}" y="${y - 12}" width="15" height="15" preserveAspectRatio="xMidYMid meet"/>` :
+            t.glyph ? `<g transform="translate(${x0} ${y - 11})" class="glyph">${GLYPHS[t.glyph]}</g>` : '') +
+      `<text x="${x0 + iw}" y="${y}" class="cap${unset ? ' unset' : ''}">${esc(txt)}</text></g>`;
+  };
+  const cls = l.mode === 'custom' || l.mode === 'color' ? '' : 'anim-' + l.mode;
+  const pro = isPro(), KP = pro ? KNOB_POS : MINI_KNOBS, H = pro ? 610 : 244;
+  const wood = !hasLights();
+  let s = `<svg viewBox="0 0 500 ${H}" class="${cls}${wood ? ' wood' : ''}" style="--speed:${Math.max(1, 12 - l.speed / 25)}s">
+    <defs>
+      <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#cfd1d8"/><stop offset="1" stop-color="#6f727c"/></linearGradient>
+      <linearGradient id="woodg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e2b77f"/><stop offset=".5" stop-color="#cf9d62"/><stop offset="1" stop-color="#b98249"/></linearGradient>
+      <linearGradient id="capg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d8dae1"/><stop offset=".46" stop-color="#9a9da7"/><stop offset=".5" stop-color="#3a3c44"/><stop offset=".54" stop-color="#9a9da7"/><stop offset="1" stop-color="#70737d"/></linearGradient>
+    </defs>
+    ${wood ? `<rect x="8" y="8" width="484" height="${H - 16}" rx="10" fill="url(#woodg)"/>
+    <path d="M8 60 C150 48 330 74 492 58 M8 120 C170 110 300 136 492 118 M8 190 C140 178 360 204 492 186" stroke="#a8743f" stroke-width="1.5" fill="none" opacity=".45"/>`
+    : `<rect x="8" y="8" width="484" height="${H - 16}" rx="${pro ? 38 : 20}" fill="${pro ? '#8f94a0' : '#c4c7ce'}"/>
+    <rect x="18" y="18" width="464" height="${H - 36}" rx="${pro ? 30 : 12}" fill="${pro ? '#1f1f24' : '#141417'}"/>`}
+    <g class="leds" opacity="${0.35 + 0.65 * l.brightness / 100}">`;
+  KP.forEach(([cx, cy], i) => {
+    const led = ledOf(i, v(i)), c = col(led, i), f = fx(led.alert), ang = -135 + 270 * v(i) / 255;
+    let ticks = '';
+    for (let k = 0; k <= 10; k++) {
+      const a = -135 + 27 * k, [x0, y0] = pt(cx, cy, 43, a), [x1, y1] = pt(cx, cy, 49, a);
+      ticks += `M${x0} ${y0}L${x1} ${y1}`;
+    }
+    const [px, py] = pt(cx, cy, 22, ang), [qx, qy] = pt(cx, cy, 9, ang);
+    s += `<g class="ctl${sel === i ? ' sel' : ''}${f.cls}" style="${f.style}" data-i="${i}">
+      <rect class="hit" x="${pro ? cx - 58 : cx - 55}" y="${pro ? cy - 52 : cy - 84}" width="${pro ? 116 : 110}" height="${pro ? 124 : 156}" rx="16"/>
+      ${wood ? `<path d="${ticks}" stroke="#4a2e15" stroke-width="2.5"/>` : `<path d="${arc(cx, cy, 38, -135, 135)}" stroke="${OFF}" stroke-width="5" fill="none" stroke-linecap="round"/>
+      <path class="led" d="${arc(cx, cy, 38, -135, 135)}" stroke="${c}" stroke-width="5" fill="none" stroke-linecap="round" style="--i:${i}"/>
+      <path class="led" d="${ticks}" stroke="${c}" stroke-width="2" style="--i:${i}"/>`}
+      <circle cx="${cx}" cy="${cy}" r="31" fill="#131317"/>
+      <circle cx="${cx}" cy="${cy}" r="28" fill="url(#metal)"/>
+      <circle cx="${cx}" cy="${cy}" r="21" fill="#8d909a" opacity=".45"/>
+      <path d="M${qx} ${qy}L${px} ${py}" stroke="#2a2b31" stroke-width="4.5" stroke-linecap="round"/>
+      <text x="${cx}" y="${pro ? cy + 51 : cy - 60}" class="tag" style="fill:${wood ? '#3b2412' : c === OFF ? '#666' : c}">${ctlShort(i)}</text>
+      </g>`;
+  });
+  for (let k = 0; k < (pro ? 4 : 0); k++) {
+    const i = KNOBS + k, x = SLIDER_X[k], left = k < 2, led = ledOf(i, v(i));
+    const top = 330, bot = 520, y = bot - (bot - top) * v(i) / 255;
+    const lx = left ? x - 30 : x + 30, lbl = p.controls[i].label_color;
+    const tagC = l.mode === 'custom' ? (lbl || '#666') : col(led, i), f = fx(led.alert);
+    s += `<g class="ctl${sel === i ? ' sel' : ''}${f.cls}" style="${f.style}" data-i="${i}">
+      <rect class="hit" x="${x - 52}" y="301" width="104" height="263" rx="16"/>
+      <text x="${lx}" y="318" class="tag big" style="fill:${tagC}">${ctlShort(i)}</text>`;
+    for (let seg = 0; seg < 5; seg++) {
+      const sy = top + seg * 38, h = 32, t = 1 - seg / 4;
+      const w0 = 22 - seg * 3.2, w1 = 22 - (seg + 1) * 3.2;
+      let c = led.anim ? animHue(i + seg) : led.solid || mix(led.from, led.to, t);
+      if (led.fill !== undefined && (4 - seg) / 5 >= led.fill) c = OFF;
+      const a = left ? lx + 12 : lx - 12, d = left ? -1 : 1;
+      s += `<path class="led" style="--i:${i + seg}" fill="${c}" d="M${a} ${sy}L${a + d * w0} ${sy}L${a + d * w1} ${sy + h}L${a} ${sy + h}Z"/>`;
+    }
+    s += `<rect x="${x - 4}" y="${top - 4}" width="8" height="${bot - top + 8}" rx="4" fill="#5c5e66"/>
+      <rect x="${x - 17}" y="${y - 24}" width="34" height="48" rx="4" fill="url(#capg)" stroke="#2a2b31"/>
+      </g>`;
+  }
+  const lg = l.logo;
+  const la = alertFor(9), lf = fx(la);
+  const logoC = la ? la.color : l.mode === 'color' ? l.color : l.mode !== 'custom' ? animHue(3) : lg.mode === 'none' ? '#3a3a42' : lg.mode === 'static' ? lg.color : animHue(3);
+  s += pro ? `<g class="${lf.cls}" style="${lf.style}"><text x="250" y="${505}" class="logo led" style="fill:${logoC};--i:3">PC</text>
+    <text x="250" y="${518}" class="logo sm led" style="fill:${logoC};--i:3">PANEL</text></g></g>` : '</g>';
+  KP.forEach(([cx, cy], i) => s += caption(i, cx, cy + 69, 104)); // box is 116 wide
+  for (let k = 0; k < (pro ? 4 : 0); k++) s += caption(KNOBS + k, SLIDER_X[k], 552, 94); // box is 104 wide
+  return s + '</svg>';
+}
+function drawDevice() {
+  const d = $('#device');
+  if (!d || !cfg) return;
+  d.innerHTML = deviceSvg();
+  d.querySelectorAll('.ctl').forEach(g => g.addEventListener('click', () => selectCtl(+g.dataset.i)));
+}
+function selectCtl(i) {
+  if (sel === i) return;
+  sel = i;
+  drawDevice();
+  drawEditor();
+}
+
+function section(title, ...kids) {
+  return h('section', {class: 'sec'}, h('h3', {}, title), kids);
+}
+function fold(key, title, summary, body) {
+  return h('details', {class: 'fold', open: openFolds.has(key), ontoggle: e => e.target.open ? openFolds.add(key) : openFolds.delete(key)},
+    h('summary', {}, h('span', {}, title), h('span', {class: 'sum'}, summary)), h('div', {class: 'fold-body'}, body));
+}
+async function testAction(ctl, a, btn) {
+  const r = await fetch('/api/test', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-PCP': '1'}, body: JSON.stringify({control: ctl, action: a})});
+  btn.textContent = r.ok ? '✓' : '!';
+  setTimeout(() => btn.textContent = '▶', 900);
+}
+function actionRows(c, key, redraw, ctl) {
+  const list = c[key] = c[key] || [];
+  return [list.map((a, i) => h('div', {class: 'act'},
+      h('div', {class: 'act-top'}, select(a, 'type', ACT_LABEL, () => { list[i] = {type: a.type, ...(ACT_DEFAULTS[a.type] || {})}; redraw(); }, ACT_GROUP),
+        h('button', {class: 'x try', title: 'Try it now', onclick: e => testAction(ctl, a, e.currentTarget)}, '▶'),
+        h('button', {class: 'x', title: 'Remove', onclick: () => { list.splice(i, 1); touch(); redraw(); }}, '×')),
+      fields(a, ACT[a.type] || []))),
+    h('button', {class: 'link', onclick: () => { list.push({type: 'mute_turn'}); touch(); redraw(); }}, '+ Add action')];
+}
+function lightRows(c, i, redraw) {
+  const l = c.light, slider = i >= KNOBS, mode = prof().lighting.mode;
+  const modes = slider
+    ? {none: 'Off', static: 'Static', gradient: 'Gradient', volume: 'Fill with position', level: 'Fill with the real volume', meter: 'Meter: its audio level'}
+    : {none: 'Off', static: 'Static', gradient: 'Gradient with position', level: 'Color follows the real volume', meter: 'Pulse with its audio'};
+  const liveHint = {level: 'Shows the actual volume, even when it was changed somewhere else (e.g. the Windows mixer).',
+    meter: slider ? 'Lights up with the sound the slider controls - bottom half first, the top when it gets loud.' : 'Brightness follows the sound this knob controls.'}[l.mode];
+  return [mode !== 'custom' ? h('div', {class: 'hint'}, `The panel is set to \"${mode}\" on the Lighting tab. These colors apply when it's set to \"Per control\".`) : null,
+    row('Mode', select(l, 'mode', modes, redraw), l.mode !== 'none' ? color(l, 'color') : null, ['gradient', 'volume'].includes(l.mode) ? ['to', color(l, 'color2')] : null),
+    liveHint ? h('div', {class: 'hint indent'}, liveHint, c.turn.type === 'app' || c.turn.type === 'device' ? '' : ' Needs an app or device set under \"When turned\".') : null,
+    row('When muted', h('label', {}, h('input', {type: 'checkbox', checked: !!l.mute_color, onchange: e => { l.mute_color = e.target.checked ? '#ff0000' : ''; touch(); redraw(); }}), ' change color'),
+      l.mute_color ? color(l, 'mute_color') : null),
+    slider ? row('Label', h('label', {}, h('input', {type: 'checkbox', checked: !!c.label_color, onchange: e => { c.label_color = e.target.checked ? '#ffffff' : ''; touch(); redraw(); }}), ' lit'),
+      c.label_color ? color(c, 'label_color') : null) : null];
+}
+function drawEditor() {
+  const box = $('#editor');
+  if (!box || !cfg) return;
+  const i = sel, c = prof().controls[i], slider = i >= KNOBS, redraw = () => { drawEditor(); drawDevice(); };
+  const lightSum = c.light.mode === 'none' ? 'Off' : h('span', {class: 'swatches'}, h('i', {style: `background:${hex(c.light.color)}`}),
+    ['gradient', 'volume'].includes(c.light.mode) ? h('i', {style: `background:${hex(c.light.color2)}`}) : null,
+    c.light.mute_color ? h('i', {class: 'mute', style: `background:${hex(c.light.mute_color)}`, title: 'when muted'}) : null);
+  setTimeout(drawStatus);
+  put(box,
+    h('div', {class: 'ed-head'}, h('h2', {}, ctlName(i)),
+      h('input', {class: 'ed-label', value: c.label, placeholder: 'Add a label', oninput: e => { c.label = e.target.value; touch(); }})),
+    h('div', {id: 'ed-status', class: 'ed-status'}),
+    section(slider ? 'When moved' : 'When turned',
+      row('Controls', select(c.turn, 'type', TURN_LABEL, () => { c.turn = {type: c.turn.type}; redraw(); })),
+      fields(c.turn, TURN[c.turn.type] || [])),
+    slider ? null : section('When pressed', actionRows(c, 'press', redraw, i)),
+    h('div', {class: 'folds'},
+      slider ? null : fold('double', 'Double press', summarize(c.double), actionRows(c, 'double', redraw, i)),
+      slider ? null : fold('hold', 'Hold', summarize(c.hold), [h('div', {class: 'hint'}, `Press and hold for ${cfg.hold_ms} ms (change it in Settings). A knob with a hold action runs its normal press when you let go.`),
+        actionRows(c, 'hold', redraw, i)]),
+      c.turn.type !== 'none' ? fold('range', 'Range & curve', `${c.min}-${c.max}%${c.curve === 'log' ? ', logarithmic' : ''}${c.invert ? ', inverted' : ''}`, [
+        row('Limits', num(c, 'min', 0, 100), 'to', num(c, 'max', 0, 100), '%', check(c, 'invert', 'invert')),
+        row('Curve', select(c, 'curve', {linear: 'Linear', log: 'Logarithmic - finer control at low volume'}, redraw))]) : null,
+      hasLights() ? fold('light', 'Light', lightSum, lightRows(c, i, redraw)) : null));
+}
+const summarize = list => list && list.length ? list.map(a => ACT_LABEL[a.type]).join(', ') : 'Nothing';
+
+// "Now at 43%", "Muted", or why the control does nothing right now.
+function drawStatus() {
+  const el = $('#ed-status');
+  if (!el || !cfg) return;
+  const i = sel, c = prof().controls[i], t = c.turn.type;
+  if (!['app', 'device'].includes(t)) { put(el); el.hidden = true; return; }
+  el.hidden = false;
+  if (present[i] === false) {
+    const who = t === 'app' ? (c.turn.apps || []).map(a => appLook(a).name).join(', ') || 'No app chosen' : c.turn.device || 'The device';
+    put(el, h('span', {class: 'warn'}, t === 'app' && (c.turn.apps || []).includes('focused')
+      ? 'The app in front isn\'t playing audio - nothing to control right now.'
+      : `${who} ${t === 'app' ? 'isn\'t running' : 'isn\'t connected'} - this control does nothing until ${t === 'app' ? 'it starts' : 'it\'s plugged in'}.`));
+    return;
+  }
+  const lv = levels[i];
+  put(el, lv == null ? null : [h('span', {}, muted[i] ? 'Muted' : `Now at ${Math.round(lv * 100)}%`),
+    h('span', {class: 'lvl'}, h('i', {style: `width:${lv * 100}%`}))]);
+}
+function controlsTab() {
+  return h('div', {class: 'ctl-layout'},
+    h('div', {class: 'device-wrap'}, h('div', {id: 'device'}), h('div', {class: 'hint center'}, 'Click a control, or just move it on your panel')),
+    h('div', {id: 'editor', class: 'editor'}));
+}
+
+// Knob light: [mode, color, color2]; gradient = color at 0 > color2 at full turn.
+// Slider light: [mode, bottom, top]; volume = fills bottom->top with the slider.
+const PRESETS = [
+  {name: 'Aurora', desc: 'Teal, sky blue and violet, like northern lights', brightness: 85, labels: '#9fffe8',
+    knobs: [['static', '#00e5c7'], ['static', '#00b4ff'], ['static', '#7a5cff'], ['static', '#00e58a'], ['static', '#b45cff']],
+    sliders: Array(4).fill(['volume', '#00e5c7', '#7a5cff']), logo: {mode: 'breath', hue: 120, speed: 60, brightness: 255}},
+  {name: 'Sunset', desc: 'Warm coral, orange and magenta', brightness: 85, labels: '#ffd2a8',
+    knobs: [['static', '#ff5e3a'], ['static', '#ff8a3d'], ['static', '#ff3d7f'], ['static', '#e63dff'], ['static', '#ffb13d']],
+    sliders: Array(4).fill(['gradient', '#e63d7f', '#ffb13d']), logo: {mode: 'static', color: '#ff7a3d'}},
+  {name: 'Ocean Depths', desc: 'Knobs brighten from deep blue to cyan as you turn them', brightness: 80, labels: '#7fd8ff',
+    knobs: Array(5).fill(['gradient', '#0a2a8f', '#00e0ff']),
+    sliders: Array(4).fill(['volume', '#0040ff', '#00fff0']), logo: {mode: 'breath', hue: 150, speed: 40, brightness: 255}},
+  {name: 'Cyberpunk', desc: 'Hot pink and electric cyan with neon yellow', brightness: 100, labels: '#fff04d',
+    knobs: [['static', '#ff2bd6'], ['static', '#00f0ff'], ['static', '#ff2bd6'], ['static', '#00f0ff'], ['static', '#ff2bd6']],
+    sliders: Array(4).fill(['gradient', '#ff2bd6', '#00f0ff']), logo: {mode: 'static', color: '#fff04d'}},
+  {name: 'Ember', desc: 'Glows from red to gold as levels rise', brightness: 90, labels: '#ff9a3d',
+    knobs: Array(5).fill(['gradient', '#ff1a00', '#ffd000']),
+    sliders: Array(4).fill(['volume', '#ff1a00', '#ffd000']), logo: {mode: 'breath', hue: 8, speed: 80, brightness: 255}},
+  {name: 'Forest', desc: 'Calm greens, easy on the eyes', brightness: 70, labels: '#d4f5c4',
+    knobs: [['static', '#2ecc71'], ['static', '#7bd148'], ['static', '#1e8449'], ['static', '#a3e635'], ['static', '#16a085']],
+    sliders: Array(4).fill(['gradient', '#145a32', '#a3e635']), logo: {mode: 'static', color: '#7bd148'}},
+  {name: 'Arctic', desc: 'Icy white and pale blue, soft brightness', brightness: 60, labels: '#ffffff',
+    knobs: [['static', '#e8f7ff'], ['static', '#9fdcff'], ['static', '#e8f7ff'], ['static', '#9fdcff'], ['static', '#e8f7ff']],
+    sliders: Array(4).fill(['volume', '#6ec6ff', '#ffffff']), logo: {mode: 'static', color: '#cfefff'}},
+  {name: 'Stealth', desc: 'Dim white, no labels or logo - for night or a tidy desk', brightness: 25, labels: '',
+    knobs: Array(5).fill(['static', '#ffffff']),
+    sliders: Array(4).fill(['volume', '#ffffff', '#ffffff']), logo: {mode: 'none'}},
+  {name: 'Spectrum', desc: 'Every control its own color, so you always know which is which', brightness: 90, labels: 'match',
+    knobs: [['static', '#ff3b30'], ['static', '#ff9500'], ['static', '#ffcc00'], ['static', '#34c759'], ['static', '#00c7be']],
+    sliders: [['volume', '#007aff', '#007aff'], ['volume', '#5856d6', '#5856d6'], ['volume', '#af52de', '#af52de'], ['volume', '#ff2d55', '#ff2d55']],
+    logo: {mode: 'rainbow', speed: 100, brightness: 255}},
+  {name: 'Rainbow Wave', desc: 'A rainbow that rolls across the whole panel', brightness: 90, mode: 'wave',
+    wave: {hue: 0, speed: 140, anim_brightness: 255, reverse: false, bounce: false}},
+];
+function applyPreset(pr) {
+  const p = prof(), l = p.lighting;
+  l.brightness = pr.brightness;
+  if (pr.mode) {
+    Object.assign(l, {mode: pr.mode}, pr.wave);
+  } else {
+    l.mode = 'custom';
+    // Keep each control's mute color; only the look changes.
+    pr.knobs.forEach(([mode, c1, c2], i) => Object.assign(p.controls[i].light, {mode, color: c1, color2: c2 || c1}));
+    pr.sliders.forEach(([mode, c1, c2], k) => {
+      const c = p.controls[KNOBS + k];
+      Object.assign(c.light, {mode, color: c1, color2: c2 || c1});
+      c.label_color = pr.labels === 'match' ? c1 : pr.labels;
+    });
+    l.logo = {...l.logo, ...pr.logo};
+  }
+  touch(); render();
+  $('#status').textContent = `Applied ${pr.name} - Undo goes back`;
+}
+function presetCard(pr) {
+  const swatch = pr.mode
+    ? h('div', {class: 'pv-wave'})
+    : h('div', {class: 'pv'},
+        h('div', {class: 'pv-knobs'}, [pr.knobs.slice(0, 2), pr.knobs.slice(2)].map(r => h('div', {}, r.map(([m, a, b]) =>
+          h('i', {style: `background:${m === 'gradient' ? `linear-gradient(135deg,${a},${b})` : a}`}))))),
+        h('div', {class: 'pv-sliders'}, pr.sliders.map(([m, a, b]) => h('b', {style: `background:linear-gradient(to top,${a},${b || a})`}))),
+        h('i', {class: 'pv-logo', style: `background:${pr.logo.mode === 'none' ? '#2b2b33' : pr.logo.mode === 'rainbow' ? 'conic-gradient(red,yellow,lime,cyan,blue,magenta,red)' : pr.logo.color || '#8a8'}`}));
+  return h('button', {class: 'preset', onclick: () => applyPreset(pr), title: pr.desc},
+    h('div', {class: 'pv-wrap', style: `opacity:${0.45 + 0.55 * pr.brightness / 100}`}, swatch),
+    h('b', {}, pr.name), h('span', {class: 'hint'}, pr.desc));
+}
+
+function lightingTab() {
+  if (!hasLights()) return h('div', {class: 'panel'}, h('h2', {}, 'Lighting'), h('div', {class: 'hint'}, 'The original wooden PCPanel has no lights, so there\'s nothing to set here.'));
+  const l = prof().lighting;
+  const box = h('div');
+  const draw = () => {
+    const anim = ['rainbow', 'wave', 'breath'].includes(l.mode);
+    put(box, h('div', {class: 'panel presets-panel'}, h('h2', {}, 'Presets'),
+        h('div', {class: 'hint'}, 'Click one to apply it to this profile. Mute colors are kept, and Undo takes it back.'),
+        h('div', {class: 'presets'}, PRESETS.map(presetCard))),
+      h('div', {class: 'panel'}, h('h2', {}, 'Lighting (this profile)'),
+      row('Mode', select(l, 'mode', {custom: 'Per control (set on each card)', color: 'Single color', rainbow: 'Rainbow', wave: 'Wave', breath: 'Breath'}, draw)),
+      row('Brightness', num(l, 'brightness', 0, 100), h('span', {class: 'hint'}, '0-100, applies to everything')),
+      l.mode === 'color' ? row('Color', color(l, 'color')) : null,
+      anim ? [row(l.mode === 'rainbow' ? 'Phase' : 'Hue', num(l, 'hue', 0, 255)), row('Speed', num(l, 'speed', 0, 255)), row('Intensity', num(l, 'anim_brightness', 0, 255))] : null,
+      l.mode === 'rainbow' ? row('', check(l, 'reverse', 'reverse'), check(l, 'vertical', 'vertical')) : null,
+      l.mode === 'wave' ? row('', check(l, 'reverse', 'reverse'), check(l, 'bounce', 'bounce')) : null),
+      l.mode === 'custom' && isPro() ? h('div', {class: 'panel'}, h('h2', {}, 'Logo'),
+        row('Mode', select(l.logo, 'mode', {none: 'Off', static: 'Static', rainbow: 'Rainbow', breath: 'Breath'}, draw)),
+        l.logo.mode === 'static' ? row('Color', color(l.logo, 'color')) : null,
+        l.logo.mode === 'breath' ? row('Hue', num(l.logo, 'hue', 0, 255)) : null,
+        ['rainbow', 'breath'].includes(l.logo.mode) ? [row('Speed', num(l.logo, 'speed', 0, 255)), row('Intensity', num(l.logo, 'brightness', 0, 255))] : null) : null);
+  };
+  draw();
+  return box;
+}
+function settingsTab() {
+  const p = prof();
+  return [h('div', {class: 'panel'}, h('h2', {}, 'Panel'),
+      row('', h('button', {class: 'pri', onclick: selfTest}, 'Test my panel...'),
+        h('span', {class: 'hint'}, 'Checks every light, knob, slider and button. Takes about a minute.'))),
+    h('div', {class: 'panel'}, h('h2', {}, 'This profile'),
+      row('Auto apps', appChips(p, 'auto_apps')),
+      h('div', {class: 'hint'}, 'Switch to this profile while one of these apps has focus, and back when it loses focus.'),
+      row('Share', h('button', {onclick: exportProfile}, 'Export this profile...'), h('button', {onclick: () => $('#profileFile').click()}, 'Import a profile file...'))),
+    h('div', {class: 'panel'}, h('h2', {}, 'Import from the official PCPanel software'),
+      h('div', {class: 'row'},
+        h('button', {onclick: () => importStock(), disabled: !stock.found, title: stock.found ? stock.path : 'Not found on this PC'}, 'Import from this PC'),
+        h('button', {onclick: () => $('#importFile').click()}, 'Import a save.json file...')),
+      h('div', {class: 'hint'}, stock.found ? `Found ${stock.path}` : 'The official software isn\'t installed here. Pick a save.json copied from another PC (it lives in %LOCALAPPDATA%\\PCPanel Software).'),
+      h('div', {class: 'hint'}, 'Imported profiles are added next to yours, and Undo takes them back.')),
+    h('div', {class: 'panel'}, h('h2', {}, 'App'),
+      row('', h('label', {}, h('input', {type: 'checkbox', checked: autostart, onchange: async e => {
+        const r = await fetch('/api/autostart', {method: 'POST', headers: {'X-PCP': '1'}, body: e.target.checked ? '1' : '0'});
+        autostart = (await r.json()).autostart; e.target.checked = autostart;
+      }}), ' Start with Windows (quietly, in the tray)'))),
+    h('div', {class: 'panel'}, h('h2', {}, 'Dials & buttons'),
+      row('', check(cfg, 'pickup', 'No volume jumps')),
+      h('div', {class: 'hint indent'}, 'If a volume was changed somewhere else, the dial takes over only once it reaches that volume, instead of snapping it to the dial\'s position.'),
+      row('Double press', num(cfg, 'double_press_ms', 100, 1000, 10), h('span', {class: 'hint'}, 'ms between presses')),
+      row('Hold', num(cfg, 'hold_ms', 250, 3000, 50), h('span', {class: 'hint'}, 'ms to count as a hold')),
+      row('Deadband', num(cfg, 'deadband', 0, 20), h('span', {class: 'hint'}, 'ignore changes this small (0-255 scale) - fixes slider twitch')),
+      row('', check(cfg, 'apply_on_connect', 'Apply dial positions when the device connects'))),
+    h('div', {class: 'panel'}, h('h2', {}, 'Volume popup'),
+      row('', check(cfg, 'osd', 'Show a popup when a dial changes a volume, mutes, or switches profile')),
+      row('Position', select(cfg, 'osd_position', {bottom: 'Bottom of the screen', top: 'Top of the screen'}))),
+    backupsPanel(),
+    h('div', {class: 'panel'}, h('h2', {}, 'OBS WebSocket'),
+      row('URL', text(cfg.obs, 'url')), row('Password', h('input', {type: 'password', value: cfg.obs.password, oninput: e => { cfg.obs.password = e.target.value; touch(); }}))),
+    h('div', {class: 'panel'}, h('h2', {}, 'Help'),
+      h('div', {class: 'hint'}, 'Apps: use Pick... or type/paste exe names (spotify, discord.exe - commas work). ',
+        'Devices: default, default_capture, default_comm, default_comm_capture, or part of a device name. ',
+        'Keys: combos like ctrl+shift+m, or media keys play_pause, next, prev, stop, vol_up, vol_down, mute. ',
+        'The config file lives at %APPDATA%\\pcpanel-revive\\config.json and is reloaded automatically when edited.'))];
+}
+function backupsPanel() {
+  const list = h('div', {class: 'backups'}, h('div', {class: 'hint'}, 'Loading...'));
+  fetch('/api/backups').then(r => r.json()).then(b => put(list, b.length ? b.map(x => h('div', {class: 'row'},
+      h('span', {class: 'bk-time'}, new Date(x.time * 1000).toLocaleString()),
+      h('button', {class: 'small', onclick: () => restoreBackup(x.name)}, 'Restore')))
+    : h('div', {class: 'hint'}, 'No snapshots yet - one is taken the next time you change something.'))).catch(() => {});
+  return h('div', {class: 'panel'}, h('h2', {}, 'Backups'),
+    h('div', {class: 'hint'}, 'Snapshots of your settings, taken automatically (at most every 10 minutes). The last 10 are kept.'), list);
+}
+async function restoreBackup(name) {
+  if (!confirm('Restore this backup? You can Undo it afterwards.')) return;
+  if (saveTimer) await autosave();
+  const r = await fetch('/api/restore', {method: 'POST', headers: {'X-PCP': '1'}, body: name});
+  if (!r.ok) { $('#status').textContent = await r.text(); return; }
+  if (lastSaved) { history.push(lastSaved); future = []; updateUndo(); }
+  setDirty(false); lastCfgJson = ''; $('#status').textContent = 'Backup restored - Undo goes back';
+}
+function alertsTab() {
+  if (!hasLights()) return h('div', {class: 'panel'}, h('h2', {}, 'Alerts'), h('div', {class: 'hint'}, 'Alerts light up the panel, and the original wooden PCPanel has no lights.'));
+  cfg.alerts = cfg.alerts || [];
+  const list = h('div', {class: 'alerts'});
+  const draw = () => put(list,
+    cfg.alerts.length ? null : h('div', {class: 'hint'}, 'No alerts yet. Example: pulse K2 purple while Discord has an unread message.'),
+    cfg.alerts.map((a, n) => h('div', {class: 'editor alert' + (a.enabled ? '' : ' off')},
+      h('div', {class: 'ed-head'},
+        h('label', {class: 'alert-on', title: 'On/off'}, h('input', {type: 'checkbox', checked: a.enabled, onchange: e => { a.enabled = e.target.checked; touch(); draw(); drawDevice(); }})),
+        h('h2', {}, a.app ? appLook(normExe(a.app)).name : 'New alert'),
+        h('span', {class: 'spacer'}),
+        h('span', {class: 'badge-live', 'data-n': n, hidden: !alertsOn[n]}, 'Showing now'),
+        h('button', {onclick: () => fetch('/api/alert-preview', {method: 'POST', headers: {'X-PCP': '1'}, body: String(n)})}, 'Preview 5 s'),
+        h('button', {class: 'x', title: 'Delete alert', onclick: () => { cfg.alerts.splice(n, 1); touch(); draw(); drawDevice(); }}, '×')),
+      row('App', appOne(a, 'app')),
+      row('When', select(a, 'trigger', {flash: 'It flashes its taskbar button (new message)', title: 'Its window title contains...'}, draw)),
+      a.trigger === 'title' ? row('Text', h('input', {value: a.pattern || '', placeholder: 'leave empty for an unread count like (3)', oninput: e => { a.pattern = e.target.value; touch(); }})) : null,
+      row('Lights', h('div', {class: 'light-picks'}, (isPro() ? LIGHTS : LIGHTS.slice(0, 4)).map(k => h('button', {class: 'pick' + ((a.lights || []).includes(k) ? ' on' : ''), onclick: () => {
+        a.lights = (a.lights || []).includes(k) ? a.lights.filter(x => x !== k) : [...(a.lights || []), k]; touch(); draw(); drawDevice();
+      }}, k === 'logo' ? 'Logo' : k.toUpperCase())))),
+      row('Stop after', num(a, 'timeout_min', 0, 1440), h('span', {class: 'hint'}, 'minutes (0 = keep going until you open the app)')),
+      row('Effect', select(a, 'effect', {pulse: 'Pulse', blink: 'Blink', solid: 'Solid'}, () => { draw(); drawDevice(); }), color(a, 'color'),
+        h('span', {class: 'hint'}, 'every'), num(a, 'period_ms', 200, 10000, 100), h('span', {class: 'hint'}, 'ms')))),
+    h('button', {class: 'link', onclick: () => {
+      cfg.alerts.push({enabled: true, app: '', trigger: 'flash', pattern: '', lights: [isPro() ? 'logo' : 'k1'], effect: 'pulse', color: '#5865f2', period_ms: 1200, timeout_min: 0});
+      touch(); draw();
+    }}, '+ Add alert'),
+    h('div', {class: 'hint', style: 'margin-top:14px'},
+      'Taskbar flash works for Discord (Settings > Notifications > Enable Taskbar Flashing), Teams, Slack, Telegram and most chat apps. ',
+      'The light stops when you switch to the app. Title works for apps that show an unread count in their window title. ',
+      'Alerts apply to every profile. While one shows, rainbow/wave/breath lighting is imitated so only the alert LEDs change.'));
+  draw();
+  return h('div', {class: 'ctl-layout'},
+    h('div', {class: 'device-wrap'}, h('div', {id: 'device'}), h('div', {class: 'hint center'}, 'Alerts light up here too')),
+    list);
+}
+// ---- share one profile as a file ----
+function exportProfile() {
+  const data = JSON.stringify({pcpanel_revive_profile: 1, name: cfg.active, profile: prof()}, null, 2);
+  const a = h('a', {href: URL.createObjectURL(new Blob([data], {type: 'application/json'})), download: `${cfg.active.replace(/[\\/:*?"<>|]/g, '_')}.pcpanel.json`});
+  document.body.append(a); a.click(); a.remove();
+  $('#status').textContent = 'Saved to your Downloads folder';
+}
+$('#profileFile').onchange = async e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  try {
+    const d = JSON.parse(await f.text());
+    if (!d.profile || !Array.isArray(d.profile.controls)) throw new Error('not a PCPanel Revive profile');
+    let n = (d.name || f.name.replace(/\.pcpanel\.json$|\.json$/i, '')).trim() || 'Imported';
+    while (cfg.profiles[n]) n += ' (imported)';
+    cfg.profiles[n] = d.profile;
+    cfg.active = n;
+    touch(); render();
+    $('#status').textContent = `Imported \"${n}\" - Undo takes it back`;
+  } catch (err) { $('#status').textContent = 'Couldn\'t import: ' + err.message; }
+};
+
+// ---- panel self-test ----
+async function selfTest() {
+  const dlg = $('#selftest');
+  const post = b => fetch('/api/selftest', {method: 'POST', headers: {'X-PCP': '1'}, body: b});
+  const pro = isPro(), leds = pro ? [...Array(10).keys()] : [0, 1, 2, 3], analogs = pro ? 9 : 4, nbuttons = pro ? 5 : 4;
+  const ledName = i => i === 9 ? 'Logo' : ctlName(i);
+  let step = 'lights', at = 0, timer = null, lightsOk = null, seen = {}, pressed = {};
+  await post('on');
+  const finish = async () => { clearInterval(timer); clearInterval(watch); await post('none'); await post('off'); };
+  dlg.onclose = finish;
+  const runLights = () => {
+    step = 'lights'; at = 0; clearInterval(timer); post(String(leds[0]));
+    timer = setInterval(() => {
+      at++;
+      if (at >= leds.length) { clearInterval(timer); post('none'); step = 'ask'; } else post(String(leds[at]));
+      draw();
+    }, 900);
+    draw();
+  };
+  const full = r => r && r.max - r.min >= 200;
+  const watch = setInterval(async () => {
+    if (step !== 'controls') return;
+    const s = await (await fetch('/api/state')).json();
+    s.values.slice(0, analogs).forEach((v, i) => { const r = seen[i] || (seen[i] = {min: v, max: v}); r.min = Math.min(r.min, v); r.max = Math.max(r.max, v); });
+    (s.buttons || []).slice(0, nbuttons).forEach((b, i) => { const r = pressed[i] || (pressed[i] = {down: false, ok: false}); if (b) r.down = true; else if (r.down) r.ok = true; });
+    draw();
+  }, 120);
+  const draw = () => {
+    const okControls = [...Array(analogs).keys()].filter(i => full(seen[i])).length, okButtons = [...Array(nbuttons).keys()].filter(i => pressed[i]?.ok).length;
+    const body =
+      step === 'lights' ? [h('p', {}, 'Watch your panel: each light turns white, one at a time.'), h('div', {class: 'st-now'}, ledName(leds[at])),
+        h('div', {class: 'lvl st-bar'}, h('i', {style: `width:${(at + 1) / leds.length * 100}%`}))]
+      : step === 'ask' ? [h('p', {}, 'Did every light turn white, one at a time?'),
+        h('div', {class: 'row'}, h('button', {class: 'pri', onclick: () => { lightsOk = true; step = 'controls'; draw(); }}, 'Yes, all of them'),
+          h('button', {onclick: () => { lightsOk = false; step = 'controls'; draw(); }}, 'No, some didn\'t'),
+          h('button', {onclick: runLights}, 'Show again'))]
+      : step === 'controls' ? [h('p', {}, `Turn every knob and slide every slider all the way from one end to the other, then press and release each knob. `,
+          h('span', {class: 'hint'}, 'Nothing happens to your volumes while the test runs.')),
+        h('div', {class: 'st-grid'}, [...Array(analogs).keys()].map(i => {
+          const r = seen[i];
+          return h('div', {class: 'st-item' + (full(r) ? ' ok' : '')}, h('span', {}, ctlName(i)),
+            h('div', {class: 'lvl'}, r ? h('i', {style: `margin-left:${r.min / 2.55}%;width:${(r.max - r.min) / 2.55}%`}) : null), h('b', {}, full(r) ? '✓' : ''));
+        }), [...Array(nbuttons).keys()].map(i => h('div', {class: 'st-item' + (pressed[i]?.ok ? ' ok' : '')}, h('span', {}, `Knob ${i + 1} press`),
+          h('span', {class: 'hint'}, pressed[i]?.ok ? 'pressed' : pressed[i]?.down ? 'held...' : 'waiting'), h('b', {}, pressed[i]?.ok ? '✓' : '')))),
+        h('div', {class: 'row'}, h('button', {class: 'pri', onclick: () => { step = 'done'; draw(); }}, okControls === analogs && okButtons === nbuttons ? 'Finish' : 'Finish anyway'))]
+      : [h('p', {}, lightsOk ? '✓ All lights work.' : '✗ Some lights didn\'t turn on.'),
+        h('p', {}, `${okControls === analogs ? '✓' : '✗'} ${okControls} of ${analogs} knobs and sliders moved end to end.`),
+        h('p', {}, `${okButtons === nbuttons ? '✓' : '✗'} ${okButtons} of ${nbuttons} buttons pressed.`),
+        okControls < analogs || okButtons < nbuttons ? h('p', {class: 'hint'}, 'Not checked: ' + [...[...Array(analogs).keys()].filter(i => !full(seen[i])).map(ctlName),
+          ...[...Array(nbuttons).keys()].filter(i => !pressed[i]?.ok).map(i => `Knob ${i + 1} press`)].join(', ')) : null,
+        h('div', {class: 'row'}, h('button', {class: 'pri', onclick: () => dlg.close()}, 'Close'))];
+    put(dlg, h('div', {class: 'st'}, h('div', {class: 'st-head'}, h('h2', {}, 'Test my panel'),
+      h('span', {class: 'hint'}, {lights: 'Step 1 of 2 · Lights', ask: 'Step 1 of 2 · Lights', controls: 'Step 2 of 2 · Knobs, sliders & buttons', done: 'Results'}[step]),
+      h('button', {class: 'x', title: 'Close', onclick: () => dlg.close()}, '×')), body));
+  };
+  dlg.showModal();
+  runLights();
+}
+function logTab() {
+  return [h('div', {class: 'row'}, h('button', {onclick: () => fetch('/api/open-log', {method: 'POST', headers: {'X-PCP': '1'}})}, 'Open log file'),
+      h('span', {class: 'hint'}, 'The full history, including crash details, is kept in pcpanel-revive.log next to your settings.')),
+    h('div', {class: 'panel', id: 'log'}, h('h2', {}, 'Log'))];
+}
+
+function render() {
+  closeCombo();
+  put($('#profileBox'), combo(() => cfg.active, v => { cfg.active = v; touch(); render(); }, Object.keys(cfg.profiles).map(n => ({value: n, label: n}))));
+  put($('#tabs'), [['controls', 'Controls'], ['lighting', 'Lighting'], ['alerts', 'Alerts'], ['settings', 'Settings'], ['log', 'Log']].map(([k, l]) =>
+    h('button', {class: tab === k ? 'sel' : '', onclick: () => { tab = k; render(); }}, l)));
+  drawNotice();
+  const m = $('#main');
+  if (tab === 'controls') { put(m, controlsTab()); drawDevice(); drawEditor(); }
+  else if (tab === 'lighting') put(m, lightingTab());
+  else if (tab === 'alerts') { put(m, alertsTab()); drawDevice(); }
+  else if (tab === 'settings') put(m, settingsTab());
+  else put(m, logTab());
+}
+
+// ---- import from the official software ----
+let stock = {found: false}, notice = null;
+const store = (k, v) => { try { return v === undefined ? localStorage.getItem(k) : localStorage.setItem(k, v); } catch (e) { return null; } };
+async function checkStock() {
+  try { stock = await (await fetch('/api/stock')).json(); } catch (e) {}
+  if (stock.found && !store('importOffered') && !notice) { notice = {kind: 'offer'}; drawNotice(); }
+}
+function drawNotice() {
+  const n = $('#notice');
+  if (!notice) { put(n); n.hidden = true; return; }
+  n.hidden = false;
+  const close = h('button', {class: 'x', title: 'Dismiss', onclick: () => { store('importOffered', '1'); notice = null; drawNotice(); }}, '×');
+  if (notice.kind === 'offer') {
+    put(n, h('div', {class: 'nt-body'}, h('b', {}, 'Found your PCPanel profiles.'), ' Bring over your knobs, sliders, buttons and lighting from the official software?'),
+      h('button', {class: 'pri', onclick: () => importStock()}, 'Import'), close);
+  } else {
+    put(n, h('div', {class: 'nt-body'},
+        h('b', {}, `Imported ${notice.names.join(', ')}.`), ' Not what you wanted? Undo takes it back.',
+        notice.notes.length ? h('ul', {}, notice.notes.map(x => h('li', {}, x.replace(/^[^:]+: /, '')))) : null),
+      h('button', {onclick: async () => { notice = null; drawNotice(); await undoRedo(true); }}, 'Undo'), close);
+  }
+}
+$('#importFile').onchange = async e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (f) importStock(await f.text());
+};
+async function importStock(text) {
+  const r = await fetch('/api/import', {method: 'POST', headers: {'X-PCP': '1'}, body: text || ''});
+  if (!r.ok) { $('#status').textContent = await r.text(); return; }
+  const d = await r.json();
+  const renamed = {};
+  for (const [name, p] of Object.entries(d.profiles)) {
+    let n = name;
+    while (cfg.profiles[n]) n += ' (PCPanel)';
+    cfg.profiles[n] = p; renamed[name] = n;
+  }
+  if (d.active && renamed[d.active]) cfg.active = renamed[d.active];
+  store('importOffered', '1');
+  notice = {kind: 'result', names: Object.values(renamed), notes: d.notes};
+  tab = 'controls';
+  touch(); render();
+}
+
+// Changes save themselves; each save is one undo step.
+async function postConfig(json) {
+  saving = true;
+  try {
+    const r = await fetch('/api/config', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-PCP': '1'}, body: json});
+    if (!r.ok) { $('#status').textContent = 'Couldn\'t save: ' + await r.text(); return false; }
+    // Remember the server's (normalized) copy so the poll doesn't treat our own save as an outside change.
+    lastSaveAt = Date.now();
+    return true;
+  } catch (e) {
+    $('#status').textContent = 'Couldn\'t save - is the app running?';
+    return false;
+  } finally { saving = false; }
+}
+async function autosave() {
+  clearTimeout(saveTimer); saveTimer = null;
+  const now = JSON.stringify(cfg);
+  if (now === lastSaved) { setDirty(false); $('#status').textContent = 'All changes saved'; return; }
+  if (!await postConfig(now)) return;
+  if (lastSaved) { history.push(lastSaved); if (history.length > 100) history.shift(); future = []; }
+  lastSaved = now;
+  setDirty(false);
+  $('#status').textContent = 'All changes saved';
+  updateUndo();
+}
+async function undoRedo(back) {
+  if (saveTimer) await autosave();
+  const from = back ? history : future, to = back ? future : history;
+  if (!from.length) return;
+  closeCombo();
+  to.push(lastSaved);
+  const state = from.pop();
+  if (!await postConfig(state)) { from.push(state); to.pop(); return; }
+  lastSaved = state; cfg = JSON.parse(state);
+  setDirty(false);
+  $('#status').textContent = back ? 'Undone' : 'Redone';
+  updateUndo(); render();
+}
+function updateUndo() {
+  $('#undo').disabled = !history.length;
+  $('#redo').disabled = !future.length;
+}
+window.autosave = autosave;
+
+async function poll() {
+  try {
+    const s = await (await fetch('/api/state')).json();
+    $('#dot').className = 'dot' + (s.connected ? ' on' : '');
+    $('#conn').textContent = previewModel ? `Previewing the ${{pro: 'PCPanel Pro', mini: 'PCPanel Mini', original: 'original wooden PCPanel'}[previewModel] || previewModel} layout - nothing is saved` : s.connected ? `${s.model_name} connected` : 'PCPanel not found';
+    if (!previewModel && s.connected && s.model && s.model !== model) { model = s.model; if (!isPro() && sel >= 4) sel = 0; if (cfg && !dirty) render(); }
+    const moved = lastValues.length ? s.values.findIndex((v, i) => Math.abs(v - lastValues[i]) > 2) : -1;
+    const changed = JSON.stringify(s.values) !== JSON.stringify(lastValues) || JSON.stringify(s.muted) !== JSON.stringify(muted);
+    const presentChanged = JSON.stringify(s.present) !== JSON.stringify(present);
+    const peaksChanged = JSON.stringify(s.peaks || []) !== JSON.stringify(peaks);
+    peaks = s.peaks || [];
+    if (peaksChanged) drawDevice();
+    const alertsChanged = JSON.stringify(s.alerts_on || []) !== JSON.stringify(alertsOn);
+    alertsOn = s.alerts_on || [];
+    if (alertsChanged) { drawDevice(); document.querySelectorAll('.badge-live').forEach(b => b.hidden = !alertsOn[+b.dataset.n]); }
+    lastValues = s.values; muted = s.muted || []; levels = s.levels || []; present = s.present || [];
+    drawStatus();
+    if (presentChanged) drawDevice();
+    const ed = $('#editor'), typing = ed && ed.contains(document.activeElement) && /INPUT|SELECT/.test(document.activeElement.tagName);
+    if (moved >= 0 && tab === 'controls' && !$('#picker').open && !typing && !openCombo) selectCtl(moved);
+    if (changed) drawDevice();
+    const log = $('#log');
+    if (log) put(log, h('h2', {}, 'Log'), s.log.length ? s.log.slice().reverse().map(l => h('div', {}, l)) : h('div', {class: 'hint'}, 'Nothing yet.'));
+    const j = JSON.stringify(s.config);
+    autostart = !!s.autostart;
+    // The tray app reloads our save a moment later; that echo isn't an outside change, so don't redraw for it.
+    if (j !== lastCfgJson && Date.now() - lastSaveAt < 2000) lastCfgJson = j;
+    if (!dirty && !saving && j !== lastCfgJson && !$('#picker').open) {
+      lastCfgJson = j; cfg = s.config; lastSaved = JSON.stringify(cfg); render();
+      if (!$('#status').textContent) $('#status').textContent = 'All changes saved';
+    }
+  } catch (e) { $('#conn').textContent = 'background app not running'; $('#dot').className = 'dot'; }
+  setTimeout(poll, 300);
+}
+let displayList = [];
+async function loadDevices() {
+  try {
+    deviceList = await (await fetch('/api/devices')).json();
+    displayList = await (await fetch('/api/displays')).json();
+  } catch (e) {}
+}
+// Check displays to toggle just those (DDC/CI); none checked = every display.
+function displayPicker(o, k) {
+  o[k] = o[k] || [];
+  const box = h('div', {class: 'displays'});
+  const draw = () => put(box,
+    h('label', {}, h('input', {type: 'checkbox', checked: !o[k].length, onchange: e => { if (e.target.checked) { o[k] = []; touch(); draw(); } }}), ' All displays'),
+    displayList.map(d => h('label', {}, h('input', {type: 'checkbox', checked: o[k].includes(d.id), onchange: e => {
+      o[k] = e.target.checked ? [...o[k], d.id] : o[k].filter(x => x !== d.id); touch(); draw();
+    }}), ' ' + d.name)),
+    h('div', {class: 'hint'}, !o[k].length
+      ? 'Turns every screen off. Move the mouse or press a key to wake them.'
+      : 'Each press turns these off, and the next press back on. Uses DDC/CI - if nothing happens, turn DDC/CI on in the monitor\'s own menu. Laptop screens only work with \"All displays\".'));
+  draw();
+  return box;
+}
+
+$('#undo').onclick = () => undoRedo(true);
+$('#redo').onclick = () => undoRedo(false);
+document.addEventListener('keydown', e => {
+  if (!e.ctrlKey || /INPUT|TEXTAREA/.test(document.activeElement?.tagName)) return; // text boxes keep their own undo
+  const k = e.key.toLowerCase();
+  if (k === 'z' && !e.shiftKey) { e.preventDefault(); undoRedo(true); }
+  else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); undoRedo(false); }
+});
+// Full value of anything cut off with "...", on hover.
+document.addEventListener('mouseover', e => {
+  const el = e.target.closest && e.target.closest('.val, .sum, .lb, .chip span, .nm div, .ex, input:not([type])');
+  if (!el) return;
+  const full = el.value ?? el.textContent;
+  el.title = el.scrollWidth > el.clientWidth + 1 ? full : (el.dataset.title || '');
+});
+$('#pNew').onclick = () => {
+  const n = prompt('New profile name (copies the current one):');
+  if (!n || cfg.profiles[n]) return;
+  cfg.profiles[n] = JSON.parse(JSON.stringify(prof()));
+  cfg.profiles[n].auto_apps = [];
+  cfg.active = n; touch(); render();
+};
+$('#pRen').onclick = () => {
+  const n = prompt('Rename profile to:', cfg.active);
+  if (!n || cfg.profiles[n]) return;
+  cfg.profiles[n] = prof(); delete cfg.profiles[cfg.active]; cfg.active = n; touch(); render();
+};
+$('#pDel').onclick = () => {
+  if (Object.keys(cfg.profiles).length < 2 || !confirm(`Delete profile "${cfg.active}"?`)) return;
+  delete cfg.profiles[cfg.active]; cfg.active = Object.keys(cfg.profiles)[0]; touch(); render();
+};
+window.addEventListener('focus', loadDevices);
+loadDevices();
+checkStock();
+loadApps().then(() => cfg && !dirty && render());
+poll();
+</script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+[package]
+name = "pcpanel-revive"
+version = "0.1.0"
+edition = "2021"
+description = "Lightweight tray replacement for the PCPanel Pro / Mini software on Windows"
+readme = "README.md"
+
+[dependencies]
+hidapi = { version = "2.6", default-features = false, features = ["windows-native"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tiny_http = "0.12"
+tray-icon = "0.25"
+tungstenite = "0.30"
+sha2 = "0.10"
+base64 = "0.22"
+windows-core = "0.62"
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Media_Audio",
+    "Win32_Media_Audio_Endpoints",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Registry",
+    "Win32_System_Shutdown",
+    "Win32_System_SystemInformation",
+    "Win32_Security",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Threading",
+    "Win32_System_Variant",
+    "Win32_System_WinRT",
+    "Win32_Devices_Display",
+    "Win32_Devices_FunctionDiscovery",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_PropertiesSystem",
+    "Win32_UI_WindowsAndMessaging",
+] }
+wry = "0.57"
+tao = "0.37"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true

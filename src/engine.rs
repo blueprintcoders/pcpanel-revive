@@ -1,0 +1,976 @@
+//! Turns device events into actions. Owns the config; runs on its own COM thread.
+use crate::audio::{self, Audio, Session};
+use crate::config::{self, Action, Alert, Config, Light, Logo, Profile, Turn, CONTROLS, KNOBS};
+use windows::Win32::Media::Audio::Endpoints::IAudioMeterInformation;
+use crate::hid::{self, Event};
+use crate::osd::{self, Info};
+use crate::{log, obs::Obs, sys, Msg, Shared, WM_OSD, WM_REFRESH};
+use serde_json::json;
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
+use std::sync::{Arc, Mutex};
+use std::collections::HashSet;
+use std::time::{Duration, Instant, SystemTime};
+
+const POLL: Duration = Duration::from_millis(500);
+const CMD_INTERVAL: Duration = Duration::from_millis(150);
+/// Frame time while an alert animates the LEDs.
+const FRAME: Duration = Duration::from_millis(50);
+const PREVIEW: Duration = Duration::from_secs(5);
+/// Pickup: how close the control must get to the current volume to take over.
+const PICKUP_WINDOW: f32 = 0.03;
+/// Pickup: a volume that moved this far from what we last set was changed elsewhere.
+const EXTERNAL_CHANGE: f32 = 0.02;
+
+#[derive(Clone, Copy, PartialEq)]
+enum Press { Single, Double, Hold }
+
+struct Engine {
+    cfg: Config,
+    shared: Arc<Mutex<Shared>>,
+    post: Box<dyn Fn(u32)>,
+    audio: Audio,
+    obs: Obs,
+    sent: [Option<u8>; CONTROLS],
+    pending: [Option<u8>; CONTROLS],
+    last_cmd: [Option<Instant>; CONTROLS],
+    muted: [bool; CONTROLS],
+    press_deadline: [Option<Instant>; KNOBS],
+    hold_deadline: [Option<Instant>; KNOBS],
+    hold_fired: [bool; KNOBS],
+    /// Pickup state per control: taken over, level we last set, which side of the volume the control was on.
+    engaged: [bool; CONTROLS],
+    last_set: [Option<f32>; CONTROLS],
+    side: [Option<f32>; CONTROLS],
+    /// Profile to return to when the auto-switched app loses focus.
+    auto_prev: Option<String>,
+    cfg_mtime: Option<SystemTime>,
+    /// Brightness to restore when the lights are toggled back on.
+    lights_before: u8,
+    /// Apps muted by focus mode, to unmute on the next press.
+    focus_muted: Vec<String>,
+    /// Apps whose taskbar button flashed and that haven't been switched to since.
+    flashing: HashSet<String>,
+    alerts_on: Vec<bool>,
+    preview: Option<(usize, Instant)>,
+    /// When each alert started showing, and whether it ran past its time limit.
+    alert_since: Vec<Option<Instant>>,
+    alert_expired: Vec<bool>,
+    /// Latest known volume per control (for "follow the real volume" lights).
+    levels: [Option<f32>; CONTROLS],
+    /// Audio meters per control, refreshed every poll; smoothed peaks per frame.
+    meters: Vec<Vec<IAudioMeterInformation>>,
+    peaks: [f32; CONTROLS],
+    connected: bool,
+    /// Panel self-test: inputs don't run actions until this time.
+    test_until: Option<Instant>,
+    light_test: Option<usize>,
+    anim_t0: Instant,
+}
+
+pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Box<dyn Fn(u32)>) {
+    audio::com_init();
+    let audio = match Audio::new() {
+        Ok(a) => a,
+        Err(e) => return log(&shared, format!("audio init failed: {e}")),
+    };
+    let mut e = Engine {
+        cfg, shared, post, audio, obs: Obs::default(),
+        sent: [None; CONTROLS], pending: [None; CONTROLS], last_cmd: [None; CONTROLS], muted: [false; CONTROLS],
+        press_deadline: [None; KNOBS], hold_deadline: [None; KNOBS], hold_fired: [false; KNOBS],
+        engaged: [false; CONTROLS], last_set: [None; CONTROLS], side: [None; CONTROLS],
+        auto_prev: None, cfg_mtime: mtime(), lights_before: 0, focus_muted: vec![],
+        flashing: HashSet::new(), alerts_on: vec![], preview: None, anim_t0: Instant::now(),
+        alert_since: vec![], alert_expired: vec![], levels: [None; CONTROLS], meters: vec![], peaks: [0.0; CONTROLS],
+        connected: false, test_until: None, light_test: None,
+    };
+    e.publish();
+    let mut next_poll = Instant::now();
+    let mut next_frame = Instant::now();
+    loop {
+        let now = Instant::now();
+        let mut wake = next_poll;
+        if e.animating() {
+            wake = wake.min(next_frame);
+        }
+        for d in e.press_deadline.iter().chain(&e.hold_deadline).flatten() {
+            wake = wake.min(*d);
+        }
+        if e.pending.iter().any(Option::is_some) {
+            wake = wake.min(now + Duration::from_millis(30));
+        }
+        match rx.recv_timeout(wake.saturating_duration_since(now)) {
+            Ok(m) => e.handle(m),
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => return,
+        }
+        // Coalesce: drain everything queued so only the latest position per control is applied.
+        while let Ok(m) = rx.try_recv() {
+            e.handle(m);
+        }
+        e.apply_turns();
+        e.fire_due_presses();
+        if Instant::now() >= next_poll {
+            e.poll();
+            next_poll = Instant::now() + POLL;
+        }
+        if e.animating() && Instant::now() >= next_frame {
+            e.sample_meters();
+            if e.preview.is_some_and(|(_, until)| Instant::now() >= until) && e.update_alerts() && !e.animating() {
+                e.relight(); // preview ended: restore the normal lighting once
+            } else {
+                e.relight();
+            }
+            next_frame = Instant::now() + FRAME;
+        }
+    }
+}
+
+/// The profile as it should look at time `t` with the active alerts drawn on top.
+fn alert_profile(p: &Profile, alerts: &[Alert], on: &[bool], t: f32) -> Profile {
+    let mut f = p.clone();
+    let l = &p.lighting;
+    let solid = |c: String| Light { mode: "static".into(), color: c.clone(), color2: c, mute_color: String::new() };
+    if l.mode != "custom" {
+        // Knob rings can't mix a firmware animation with a single alert LED, so imitate it in software.
+        let dim = l.anim_brightness as f32 / 255.0;
+        let period = 2.0 + (255 - l.speed) as f32 / 255.0 * 8.0;
+        for i in 0..CONTROLS {
+            let c = match l.mode.as_str() {
+                "color" => l.color.clone(),
+                "breath" => hsv_hex(l.hue as f32 * 1.41, 1.0, dim * (0.55 - 0.45 * (t / period * std::f32::consts::TAU).cos())),
+                _ => hsv_hex(i as f32 * 40.0 + l.hue as f32 * 1.41 + t / period * 360.0 * if l.reverse { -1.0 } else { 1.0 }, 1.0, dim),
+            };
+            f.controls[i].light = solid(c.clone());
+            f.controls[i].label_color = c;
+        }
+        f.lighting.logo = match l.mode.as_str() {
+            "color" => Logo { mode: "static".into(), color: l.color.clone(), ..Logo::default() },
+            "breath" => Logo { mode: "breath".into(), hue: l.hue, speed: l.speed, brightness: l.anim_brightness, ..Logo::default() },
+            _ => Logo { mode: "rainbow".into(), speed: l.speed, brightness: l.anim_brightness, ..Logo::default() },
+        };
+        f.lighting.mode = "custom".into();
+    }
+    for (a, _) in alerts.iter().zip(on).filter(|(_, on)| **on) {
+        let c = scale_hex(&a.color, intensity(a, t));
+        for idx in a.lights.iter().filter_map(|n| Alert::light_index(n)) {
+            if idx == CONTROLS {
+                f.lighting.logo = Logo { mode: "static".into(), color: c.clone(), ..Logo::default() };
+            } else {
+                f.controls[idx].light = solid(c.clone());
+            }
+        }
+    }
+    f
+}
+
+/// A light driven by a live level (audio peak or real volume), as plain colors the panel understands.
+/// Slider strips only take two colors, so the level fills bottom-first: the top half lights past 50%.
+fn live_light(l: &Light, v: f32, slider: bool) -> Light {
+    let v = v.clamp(0.0, 1.0);
+    let (color, color2) = if slider {
+        (scale_hex(&l.color, (2.0 * v).min(1.0)), scale_hex(&l.color2, (2.0 * v - 1.0).max(0.0)))
+    } else if l.mode == "level" {
+        let c = mix_hex(&l.color, &l.color2, v);
+        (c.clone(), c)
+    } else {
+        let c = scale_hex(&l.color, 0.06 + 0.94 * v);
+        (c.clone(), c)
+    };
+    Light { mode: if slider { "gradient" } else { "static" }.into(), color, color2, mute_color: l.mute_color.clone() }
+}
+
+fn mix_hex(a: &str, b: &str, t: f32) -> String {
+    let p = |h: &str, i: usize| h.trim_start_matches('#').get(i..i + 2).and_then(|x| u8::from_str_radix(x, 16).ok()).unwrap_or(0) as f32;
+    let c = |i| (p(a, i) + (p(b, i) - p(a, i)) * t.clamp(0.0, 1.0)) as u8;
+    format!("#{:02x}{:02x}{:02x}", c(0), c(2), c(4))
+}
+
+/// Self-test frame: everything off except one LED, lit white at full brightness.
+fn test_profile(p: &Profile, led: usize) -> Profile {
+    let mut f = p.clone();
+    let off = Light { mode: "none".into(), color: String::new(), color2: String::new(), mute_color: String::new() };
+    let white = Light { mode: "static".into(), color: "#ffffff".into(), color2: "#ffffff".into(), mute_color: String::new() };
+    f.lighting.mode = "custom".into();
+    f.lighting.brightness = 100;
+    f.lighting.logo = Logo { mode: "none".into(), ..Logo::default() };
+    for (i, c) in f.controls.iter_mut().enumerate() {
+        c.light = if i == led { white.clone() } else { off.clone() };
+        c.label_color = if i == led && i >= KNOBS { "#ffffff".into() } else { String::new() };
+    }
+    if led == CONTROLS {
+        f.lighting.logo = Logo { mode: "static".into(), color: "#ffffff".into(), ..Logo::default() };
+    }
+    f
+}
+
+fn hsv_hex(h: f32, s: f32, v: f32) -> String {
+    let c = v * s;
+    let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
+    let (r, g, b) = match (h.rem_euclid(360.0) / 60.0) as u32 {
+        0 => (c, x, 0.0), 1 => (x, c, 0.0), 2 => (0.0, c, x), 3 => (0.0, x, c), 4 => (x, 0.0, c), _ => (c, 0.0, x),
+    };
+    let m = v - c;
+    format!("#{:02x}{:02x}{:02x}", ((r + m) * 255.0) as u8, ((g + m) * 255.0) as u8, ((b + m) * 255.0) as u8)
+}
+
+fn scale_hex(hex: &str, k: f32) -> String {
+    let h = hex.trim_start_matches('#');
+    let p = |i: usize| h.get(i..i + 2).and_then(|x| u8::from_str_radix(x, 16).ok()).unwrap_or(0) as f32 * k.clamp(0.0, 1.0);
+    format!("#{:02x}{:02x}{:02x}", p(0) as u8, p(2) as u8, p(4) as u8)
+}
+
+/// Alert brightness (0..1) at time `t` seconds.
+fn intensity(a: &Alert, t: f32) -> f32 {
+    let period = a.period_ms.clamp(200, 10_000) as f32 / 1000.0;
+    match a.effect.as_str() {
+        "solid" => 1.0,
+        "blink" => if t % period < period / 2.0 { 1.0 } else { 0.0 },
+        _ => 0.12 + 0.88 * (0.5 - 0.5 * (t / period * std::f32::consts::TAU).cos()),
+    }
+}
+
+fn mtime() -> Option<SystemTime> {
+    std::fs::metadata(config::path()).and_then(|m| m.modified()).ok()
+}
+
+/// Lowercase, add ".exe" to bare names; keeps the special targets.
+fn norm(app: &str) -> String {
+    let a = app.trim().to_lowercase();
+    if a.contains('.') || matches!(a.as_str(), "focused" | "system" | "unmapped" | "") { a } else { a + ".exe" }
+}
+
+/// Pickup decision. Returns true when the control should drive the volume now.
+/// `side` remembers which side of the current volume the control was on, so a fast sweep across it still engages.
+fn picks_up(target: f32, current: f32, side: &mut Option<f32>) -> bool {
+    let d = target - current;
+    let crossed = side.is_some_and(|s| s != d.signum());
+    if d.abs() <= PICKUP_WINDOW || crossed {
+        *side = None;
+        true
+    } else {
+        *side = Some(d.signum());
+        false
+    }
+}
+
+impl Engine {
+    fn handle(&mut self, m: Msg) {
+        match m {
+            Msg::Hid(Event::Connected(c)) => {
+                crate::lock(&self.shared).connected = c;
+                self.connected = c;
+                if c {
+                    self.relight();
+                }
+                (self.post)(WM_REFRESH);
+            }
+            Msg::Hid(Event::Turn { index, value, initial }) => {
+                crate::lock(&self.shared).values[index] = value;
+                if self.testing() {
+                    self.sent[index] = Some(value);
+                    return;
+                }
+                if initial && !self.cfg.apply_on_connect {
+                    self.sent[index] = Some(value);
+                    return;
+                }
+                if let Some(s) = self.sent[index] {
+                    let db = self.cfg.deadband;
+                    if value.abs_diff(s) <= db && value != 0 && value != 255 {
+                        return;
+                    }
+                }
+                self.pending[index] = Some(value);
+            }
+            Msg::Hid(Event::Button { index, down }) => {
+                crate::lock(&self.shared).buttons[index] = down;
+                if self.testing() {
+                    return;
+                }
+                let has_hold = !self.cfg.profile().controls[index].hold.is_empty();
+                match (down, has_hold) {
+                    (true, true) => {
+                        self.hold_fired[index] = false;
+                        self.hold_deadline[index] = Some(Instant::now() + Duration::from_millis(self.cfg.hold_ms));
+                    }
+                    (true, false) => self.click(index),
+                    // Released before the hold time: it was a normal click.
+                    (false, true) if !self.hold_fired[index] && self.hold_deadline[index].take().is_some() => self.click(index),
+                    _ => {}
+                }
+            }
+            Msg::Profile(name) => {
+                self.auto_prev = None;
+                self.activate(&name, true);
+            }
+            Msg::Reload => match config::load() {
+                Ok(cfg) => {
+                    self.cfg_mtime = mtime();
+                    self.set_config(cfg);
+                    log(&self.shared, "config reloaded".into());
+                }
+                Err(e) => log(&self.shared, format!("config error: {e}")),
+            },
+            Msg::Flash(exe) => {
+                if self.cfg.alerts.iter().any(|a| a.enabled && norm(&a.app) == exe) {
+                    self.flashing.insert(exe);
+                    if self.update_alerts() {
+                        self.relight();
+                    }
+                }
+            }
+            Msg::PreviewAlert(n) => {
+                if n < self.cfg.alerts.len() {
+                    self.preview = Some((n, Instant::now() + PREVIEW));
+                    self.update_alerts();
+                    self.relight();
+                }
+            }
+            Msg::TestMode(on) => {
+                self.test_until = on.then(|| Instant::now() + Duration::from_secs(600));
+                if !on {
+                    self.light_test = None;
+                    self.relight();
+                }
+                log(&self.shared, format!("panel self-test {}", if on { "started" } else { "finished" }));
+            }
+            Msg::TestLight(i) => {
+                self.light_test = i;
+                self.relight();
+            }
+            Msg::Test(i, action) => {
+                if let Err(e) = self.action(i.min(CONTROLS - 1), action) {
+                    log(&self.shared, format!("test: {e}"));
+                }
+                self.refresh_mutes();
+                self.relight();
+            }
+        }
+    }
+
+    /// A completed click: single, or the first/second half of a double.
+    fn click(&mut self, i: usize) {
+        if self.cfg.profile().controls[i].double.is_empty() {
+            self.press(i, Press::Single);
+        } else if self.press_deadline[i].take().is_some() {
+            self.press(i, Press::Double);
+        } else {
+            self.press_deadline[i] = Some(Instant::now() + Duration::from_millis(self.cfg.double_press_ms));
+        }
+    }
+
+    fn set_config(&mut self, cfg: Config) {
+        if cfg.obs != self.cfg.obs {
+            self.obs.disconnect();
+        }
+        self.cfg = cfg;
+        self.update_alerts();
+        self.publish();
+    }
+
+    fn animating(&self) -> bool {
+        self.alerts_on.iter().any(|&on| on) || (self.connected && !self.meters.is_empty() && self.light_test.is_none())
+    }
+
+    fn testing(&self) -> bool {
+        self.test_until.is_some_and(|t| Instant::now() < t)
+    }
+
+    /// Read every "pulse with audio" meter and smooth it (instant rise, gentle fall).
+    fn sample_meters(&mut self) {
+        let p = self.cfg.profile();
+        for i in 0..CONTROLS {
+            if p.controls[i].light.mode != "meter" {
+                continue;
+            }
+            let peak = self.meters.get(i).map_or(0.0, |ms| ms.iter().filter_map(|m| unsafe { m.GetPeakValue().ok() }).fold(0.0f32, f32::max));
+            let target = if peak <= 0.0001 { 0.0 } else { ((20.0 * peak.log10() + 48.0) / 48.0).clamp(0.0, 1.0) };
+            let cur = self.peaks[i];
+            self.peaks[i] = if target > cur { target } else { cur * 0.8 + target * 0.2 };
+        }
+        crate::lock(&self.shared).peaks = self.peaks;
+    }
+
+    /// Profile with "pulse with audio" and "follow the volume" lights resolved to plain colors.
+    fn live_frame(&self, p: &Profile) -> Profile {
+        let mut f = p.clone();
+        if p.lighting.mode != "custom" {
+            return f;
+        }
+        for i in 0..CONTROLS {
+            let v = match p.controls[i].light.mode.as_str() {
+                "meter" => self.peaks[i],
+                "level" => self.levels[i].unwrap_or(0.0),
+                _ => continue,
+            };
+            f.controls[i].light = live_light(&p.controls[i].light, v, i >= KNOBS);
+        }
+        f
+    }
+
+    /// Recompute which alerts are lit. Returns true if that changed.
+    fn update_alerts(&mut self) -> bool {
+        if self.preview.is_some_and(|(_, until)| Instant::now() >= until) {
+            self.preview = None;
+        }
+        let n_alerts = self.cfg.alerts.len();
+        self.alert_since.resize(n_alerts, None);
+        self.alert_expired.resize(n_alerts, false);
+        let mut on = vec![false; n_alerts];
+        for (n, a) in self.cfg.alerts.iter().enumerate() {
+            let exe = norm(&a.app);
+            let raw = a.enabled && !exe.is_empty() && match a.trigger.as_str() {
+                "title" => sys::window_titles(&exe).iter().any(|t| a.title_matches(t)),
+                _ => self.flashing.contains(&exe),
+            };
+            if !raw {
+                self.alert_since[n] = None;
+                self.alert_expired[n] = false;
+            } else {
+                let since = *self.alert_since[n].get_or_insert_with(Instant::now);
+                if a.timeout_min > 0 && !self.alert_expired[n] && since.elapsed() >= Duration::from_secs(a.timeout_min as u64 * 60) {
+                    self.alert_expired[n] = true;
+                    log(&self.shared, format!("alert off after {} min: {}", a.timeout_min, a.app));
+                    // A taskbar flash is forgotten, so the next message lights it again.
+                    self.flashing.remove(&exe);
+                }
+            }
+            on[n] = self.preview.is_some_and(|(p, _)| p == n) || (raw && !self.alert_expired[n]);
+        }
+        let changed = on != self.alerts_on;
+        for (n, a) in self.cfg.alerts.iter().enumerate() {
+            let (was, now) = (self.alerts_on.get(n).copied().unwrap_or(false), on[n]);
+            if was != now && self.preview.is_none_or(|(p, _)| p != n) && !(was && self.alert_expired[n]) {
+                log(&self.shared, format!("alert {}: {}", if now { "on" } else { "off" }, a.app));
+            }
+        }
+        if changed && !on.iter().any(|&x| x) {
+            self.anim_t0 = Instant::now();
+        }
+        self.alerts_on = on.clone();
+        crate::lock(&self.shared).alerts_on = on;
+        changed
+    }
+
+    fn alert_frame(&self, p: &Profile) -> Profile {
+        alert_profile(p, &self.cfg.alerts, &self.alerts_on, self.anim_t0.elapsed().as_secs_f32())
+    }
+
+    /// Push config + lighting to shared state and refresh the tray.
+    fn publish(&mut self) {
+        crate::lock(&self.shared).config = self.cfg.clone();
+        self.refresh_mutes();
+        self.relight();
+        (self.post)(WM_REFRESH);
+    }
+
+    fn relight(&self) {
+        let model = crate::lock(&self.shared).model;
+        let frame = if let Some(led) = self.light_test {
+            test_profile(self.cfg.profile(), led)
+        } else {
+            let live = self.live_frame(self.cfg.profile());
+            if self.alerts_on.iter().any(|&on| on) { self.alert_frame(&live) } else { live }
+        };
+        let reports = hid::lighting(model, &frame, &self.muted);
+        let mut s = crate::lock(&self.shared);
+        s.lights = reports;
+        s.lights_gen += 1;
+        s.muted = self.muted;
+    }
+
+    fn osd(&self, info: Info) {
+        if !self.cfg.osd {
+            return;
+        }
+        crate::lock(&self.shared).osd = Some(Info { top: self.cfg.osd_position == "top", ..info });
+        (self.post)(WM_OSD);
+    }
+
+    fn activate(&mut self, name: &str, persist: bool) {
+        if !self.cfg.profiles.contains_key(name) || self.cfg.active == name {
+            return;
+        }
+        self.cfg.active = name.to_string();
+        if persist {
+            let _ = config::save(&self.cfg);
+            self.cfg_mtime = mtime();
+        }
+        self.engaged = [false; CONTROLS]; // controls may point somewhere new
+        self.publish();
+        self.osd(Info { title: name.to_string(), icon: osd::Icon::Profile, hint: "Profile".into(), ..Default::default() });
+    }
+
+    fn apply_turns(&mut self) {
+        for i in 0..CONTROLS {
+            let Some(v) = self.pending[i] else { continue };
+            if matches!(self.cfg.profile().controls[i].turn, Turn::Command { .. }) {
+                if self.last_cmd[i].is_some_and(|t| t.elapsed() < CMD_INTERVAL) {
+                    continue; // retried on the next wake
+                }
+                self.last_cmd[i] = Some(Instant::now());
+            }
+            self.pending[i] = None;
+            self.sent[i] = Some(v);
+            if let Err(e) = self.turn(i, v) {
+                log(&self.shared, format!("{}: {e}", self.name(i)));
+            }
+        }
+    }
+
+    fn name(&self, i: usize) -> String {
+        let l = &self.cfg.profile().controls[i].label;
+        if !l.is_empty() { l.clone() } else if i < KNOBS { format!("Knob {}", i + 1) } else { format!("Slider {}", i - KNOBS + 1) }
+    }
+
+    fn turn(&mut self, i: usize, raw: u8) -> Result<(), String> {
+        let c = self.cfg.profile().controls[i].clone();
+        let v = config::level(&c, raw);
+        let label = (!c.label.is_empty()).then(|| c.label.clone());
+        match c.turn {
+            Turn::None => {}
+            Turn::App { apps } => {
+                let m = self.matcher(&apps);
+                let hits: Vec<Session> = self.audio.sessions().into_iter().filter(|s| m(s)).collect();
+                let Some(first) = hits.first() else {
+                    self.osd(Info { title: label.unwrap_or_else(|| apps.join(", ")), hint: "Not running".into(), ..Default::default() });
+                    return Ok(());
+                };
+                let icon = osd::Icon::Exe(audio::process_path(first.pid));
+                let (title, exe_name) = (label.clone().unwrap_or_else(|| first.exe.clone()), label.is_none());
+                if !self.pickup(i, v, first.volume()) {
+                    let cur = first.volume();
+                    self.osd(Info { title, exe_name, icon, level: Some(cur), marker: Some(v), hint: format!("Move to {}% to take over", (cur * 100.0).round()), ..Default::default() });
+                    return Ok(());
+                }
+                hits.iter().for_each(|s| s.set_volume(v));
+                self.set_level(i, Some(v));
+                self.osd(Info { title, exe_name, icon, level: Some(v), muted: first.muted(), ..Default::default() });
+            }
+            Turn::Device { device } => {
+                let Some(dev) = self.audio.find(&device) else { return Err(format!("audio device '{device}' not found")) };
+                let cur = self.audio.device_volume(&dev.id).unwrap_or(v);
+                let icon = if dev.capture { osd::Icon::Mic } else { osd::Icon::Speaker };
+                let title = label.unwrap_or_else(|| dev.name.clone());
+                if !self.pickup(i, v, cur) {
+                    self.osd(Info { title, icon, level: Some(cur), marker: Some(v), hint: format!("Move to {}% to take over", (cur * 100.0).round()), ..Default::default() });
+                    return Ok(());
+                }
+                self.audio.set_device_volume(&dev.id, v).map_err(|e| e.message())?;
+                self.set_level(i, Some(v));
+                let muted = self.audio.device_muted(&dev.id).unwrap_or(false);
+                self.osd(Info { title, icon, level: Some(v), muted, ..Default::default() });
+            }
+            Turn::Obs { source } => {
+                let db = if v <= 0.0 { -100.0 } else { -60.0 + 60.0 * v.min(1.0) };
+                self.obs.request(&self.cfg.obs, "SetInputVolume", json!({"inputName": source, "inputVolumeDb": db}))?;
+                self.osd(Info { title: label.unwrap_or(format!("OBS: {source}")), icon: osd::Icon::Speaker, level: Some(v), ..Default::default() });
+            }
+            Turn::Voicemeeter { param, min_db, max_db } => {
+                sys::voicemeeter(&format!("{param}={:.1};", min_db + v.clamp(0.0, 1.0) * (max_db - min_db)))?;
+                self.osd(Info { title: label.unwrap_or(param), icon: osd::Icon::Speaker, level: Some(v), ..Default::default() });
+            }
+            Turn::Command { cmd } => sys::run(&cmd.replace("{value}", &format!("{}", (v * 100.0).round() as i32)))?,
+            Turn::Brightness => {
+                let active = self.cfg.active.clone();
+                self.cfg.profiles.get_mut(&active).unwrap().lighting.brightness = (v * 100.0).clamp(0.0, 100.0) as u8;
+                self.relight(); // not saved to disk; saving on every tick would be wasteful
+                self.osd(Info { title: label.unwrap_or("LED brightness".into()), icon: osd::Icon::Light, level: Some(v), ..Default::default() });
+            }
+        }
+        Ok(())
+    }
+
+    /// Soft takeover: after the volume changed elsewhere, ignore the control until it reaches that volume.
+    fn pickup(&mut self, i: usize, target: f32, current: f32) -> bool {
+        if !self.cfg.pickup {
+            return true;
+        }
+        let external = self.last_set[i].is_none_or(|l| (current - l).abs() > EXTERNAL_CHANGE);
+        if external {
+            self.engaged[i] = false;
+        }
+        if !self.engaged[i] {
+            self.engaged[i] = picks_up(target, current, &mut self.side[i]);
+        }
+        self.engaged[i]
+    }
+
+    fn set_level(&mut self, i: usize, v: Option<f32>) {
+        self.last_set[i] = v;
+        self.levels[i] = v;
+        if self.cfg.profile().controls[i].light.mode == "level" {
+            self.relight();
+        }
+        let mut s = crate::lock(&self.shared);
+        s.levels[i] = v;
+        s.present[i] = true;
+    }
+
+    /// Session filter for a list of app targets.
+    fn matcher(&self, apps: &[String]) -> impl Fn(&Session) -> bool {
+        let mut names: Vec<String> = apps.iter().map(|a| norm(a)).collect();
+        if names.iter().any(|a| a == "focused") {
+            names.push(audio::foreground_exe());
+        }
+        let unmapped = names.iter().any(|a| a == "unmapped");
+        let mapped: Vec<String> = self.cfg.profile().controls.iter()
+            .filter_map(|c| match &c.turn { Turn::App { apps } => Some(apps), _ => None })
+            .flatten()
+            .map(|a| norm(a))
+            .collect();
+        move |s: &Session| {
+            !s.exe.is_empty()
+                && (names.contains(&s.exe) || (unmapped && s.exe != "system" && !mapped.contains(&s.exe)))
+        }
+    }
+
+    fn fire_due_presses(&mut self) {
+        let now = Instant::now();
+        for i in 0..KNOBS {
+            if self.press_deadline[i].is_some_and(|d| d <= now) {
+                self.press_deadline[i] = None;
+                self.press(i, Press::Single);
+            }
+            if self.hold_deadline[i].is_some_and(|d| d <= now) {
+                self.hold_deadline[i] = None;
+                self.hold_fired[i] = true;
+                self.press(i, Press::Hold);
+            }
+        }
+    }
+
+    fn press(&mut self, i: usize, kind: Press) {
+        let c = &self.cfg.profile().controls[i];
+        let actions = match kind { Press::Single => c.press.clone(), Press::Double => c.double.clone(), Press::Hold => c.hold.clone() };
+        for a in actions {
+            if let Err(e) = self.action(i, a) {
+                log(&self.shared, format!("{}: {e}", self.name(i)));
+            }
+        }
+        self.refresh_mutes();
+        self.relight();
+    }
+
+    fn action(&mut self, i: usize, a: Action) -> Result<(), String> {
+        let obs = |s: &mut Self, kind: &str, data| s.obs.request(&s.cfg.obs.clone(), kind, data);
+        match a {
+            Action::MuteTurn => match self.cfg.profile().controls[i].turn.clone() {
+                Turn::App { apps } => self.toggle_app_mute(i, &apps),
+                Turn::Device { device } => self.toggle_device_mute(i, &device)?,
+                Turn::Obs { source } => obs(self, "ToggleInputMute", json!({"inputName": source}))?,
+                _ => return Err("mute_turn needs an app, device or OBS turn action".into()),
+            },
+            Action::MuteApp { apps } => self.toggle_app_mute(i, &apps),
+            Action::MuteDevice { device } => self.toggle_device_mute(i, &device)?,
+            Action::SetDefault { device } => {
+                let d = self.audio.find(&device).ok_or("audio device not found")?;
+                self.audio.set_default(&d.id).map_err(|e| e.message())?;
+                self.osd(Info { title: d.name, icon: if d.capture { osd::Icon::Mic } else { osd::Icon::Speaker }, hint: "Default device".into(), ..Default::default() });
+            }
+            Action::CycleDefault { devices } => {
+                let found: Vec<_> = devices.iter().filter_map(|d| self.audio.find(d)).collect();
+                let first = found.first().ok_or("none of the devices were found")?;
+                let cur = self.audio.default_id(first.capture);
+                let at = found.iter().position(|d| Some(&d.id) == cur.as_ref()).map_or(0, |p| (p + 1) % found.len());
+                self.audio.set_default(&found[at].id).map_err(|e| e.message())?;
+                log(&self.shared, format!("default device: {}", found[at].name));
+                let icon = if found[at].capture { osd::Icon::Mic } else { osd::Icon::Speaker };
+                self.osd(Info { title: found[at].name.clone(), icon, hint: "Default device".into(), ..Default::default() });
+            }
+            Action::Keys { keys } => sys::send_keys(&keys)?,
+            Action::Run { cmd } => sys::run(&cmd)?,
+            Action::Kill { process } => {
+                let p = if process.trim().eq_ignore_ascii_case("focused") { audio::foreground_exe() } else { process };
+                if p.is_empty() || p == "explorer.exe" {
+                    return Err("won't kill that".into());
+                }
+                sys::kill(&p)?
+            }
+            Action::Profile { name } => {
+                self.auto_prev = None;
+                self.activate(&name, true);
+            }
+            Action::NextProfile => {
+                let names: Vec<String> = self.cfg.profiles.keys().cloned().collect();
+                let at = names.iter().position(|n| *n == self.cfg.active).map_or(0, |p| (p + 1) % names.len());
+                self.auto_prev = None;
+                self.activate(&names[at], true);
+            }
+            Action::ObsScene { scene } => obs(self, "SetCurrentProgramScene", json!({"sceneName": scene}))?,
+            Action::ObsMute { source } => obs(self, "ToggleInputMute", json!({"inputName": source}))?,
+            Action::ObsRecord => obs(self, "ToggleRecord", json!({}))?,
+            Action::ObsStream => obs(self, "ToggleStream", json!({}))?,
+            Action::Voicemeeter { script } => sys::voicemeeter(&script)?,
+            Action::FocusApp { app, launch, toggle } => sys::focus_app(&norm(&app), &launch, toggle)?,
+            Action::Open { target } => sys::open(&target)?,
+            Action::TypeText { text } => sys::type_text(&text),
+            Action::MuteMic => self.toggle_device_mute(i, "default_capture")?,
+            Action::LockPc => sys::lock(),
+            Action::MonitorOff { displays } if displays.is_empty() => sys::monitor_off(),
+            Action::MonitorOff { displays } => sys::toggle_displays(&displays)?,
+            Action::LightsToggle => {
+                let active = self.cfg.active.clone();
+                let l = &mut self.cfg.profiles.get_mut(&active).unwrap().lighting;
+                if l.brightness > 0 {
+                    self.lights_before = l.brightness;
+                    l.brightness = 0;
+                } else {
+                    l.brightness = if self.lights_before > 0 { self.lights_before } else { 80 };
+                }
+                self.relight(); // runtime only; a reload or profile switch restores the saved brightness
+            }
+            Action::SetAppVolume { apps, level } => {
+                let m = self.matcher(&apps);
+                let hits: Vec<Session> = self.audio.sessions().into_iter().filter(|s| m(s)).collect();
+                let first = hits.first().ok_or("app isn't running")?;
+                let v = level.min(100) as f32 / 100.0;
+                hits.iter().for_each(|s| s.set_volume(v));
+                self.osd(Info { title: first.exe.clone(), exe_name: true, icon: osd::Icon::Exe(audio::process_path(first.pid)), level: Some(v), ..Default::default() });
+            }
+            Action::SetDeviceVolume { device, level } => {
+                let d = self.audio.find(&device).ok_or("audio device not found")?;
+                let v = level.min(100) as f32 / 100.0;
+                self.audio.set_device_volume(&d.id, v).map_err(|e| e.message())?;
+                self.osd(Info { title: d.name, icon: if d.capture { osd::Icon::Mic } else { osd::Icon::Speaker }, level: Some(v), ..Default::default() });
+            }
+            Action::MuteOthers { apps } => {
+                let m = self.matcher(&apps);
+                let sessions = self.audio.sessions();
+                let on = self.focus_muted.is_empty();
+                if on {
+                    for s in sessions.iter().filter(|s| !m(s) && !s.muted()) {
+                        s.set_mute(true);
+                        self.focus_muted.push(s.exe.clone());
+                    }
+                } else {
+                    // Only unmute what focus mode muted, not apps the user muted themselves.
+                    sessions.iter().filter(|s| self.focus_muted.contains(&s.exe)).for_each(|s| s.set_mute(false));
+                    log(&self.shared, format!("focus mode off: unmuted {}", self.focus_muted.join(", ")));
+                    self.focus_muted.clear();
+                }
+                if on {
+                    let names = if self.focus_muted.is_empty() { "nothing".into() } else { self.focus_muted.join(", ") };
+                    log(&self.shared, format!("focus mode on: muted {names}"));
+                }
+                self.osd(Info { title: "Focus mode".into(), icon: osd::Icon::Speaker, hint: if on { "On" } else { "Off" }.into(), ..Default::default() });
+            }
+            Action::Http { method, url, headers, body } => {
+                let shared = self.shared.clone();
+                std::thread::spawn(move || {
+                    if let Err(e) = sys::http(&method, &url, &headers, &body) {
+                        log(&shared, format!("web request: {e}"));
+                    }
+                });
+            }
+            Action::AppOutput { apps, device } => {
+                let m = self.matcher(&apps);
+                let hits: Vec<Session> = self.audio.sessions().into_iter().filter(|s| m(s)).collect();
+                let first = hits.first().ok_or("app isn't running - start it first")?;
+                let target = match device.trim() {
+                    "" | "default" => None,
+                    spec => Some(self.audio.find(spec).ok_or("audio device not found")?),
+                };
+                if target.as_ref().is_some_and(|d| d.capture) {
+                    return Err("pick an output device, not a microphone".into());
+                }
+                let mut pids: Vec<u32> = hits.iter().map(|s| s.pid).filter(|&p| p != 0).collect();
+                pids.dedup();
+                audio::set_app_output(&pids, target.as_ref().map(|d| d.id.as_str())).map_err(|e| e.message())?;
+                let to = target.map_or("Windows default".to_string(), |d| d.name);
+                log(&self.shared, format!("{} now plays on {to}", first.exe));
+                self.osd(Info { title: first.exe.clone(), exe_name: true, icon: osd::Icon::Exe(audio::process_path(first.pid)), hint: format!("Now on {to}"), ..Default::default() });
+            }
+        }
+        Ok(())
+    }
+
+    fn toggle_app_mute(&self, i: usize, apps: &[String]) {
+        let m = self.matcher(apps);
+        let hits: Vec<Session> = self.audio.sessions().into_iter().filter(|s| m(s)).collect();
+        let mute = hits.iter().any(|s| !s.muted());
+        hits.iter().for_each(|s| s.set_mute(mute));
+        if let Some(first) = hits.first() {
+            let label = &self.cfg.profile().controls[i].label;
+            let (title, exe_name) = if label.is_empty() { (first.exe.clone(), true) } else { (label.clone(), false) };
+            self.osd(Info { title, exe_name, icon: osd::Icon::Exe(audio::process_path(first.pid)), level: Some(first.volume()), muted: mute, ..Default::default() });
+        }
+    }
+
+    fn toggle_device_mute(&self, i: usize, device: &str) -> Result<(), String> {
+        let d = self.audio.find(device).ok_or("audio device not found")?;
+        self.audio.toggle_device_mute(&d.id).map_err(|e| e.message())?;
+        let label = &self.cfg.profile().controls[i].label;
+        self.osd(Info {
+            title: if label.is_empty() { d.name.clone() } else { label.clone() },
+            icon: if d.capture { osd::Icon::Mic } else { osd::Icon::Speaker },
+            level: self.audio.device_volume(&d.id),
+            muted: self.audio.device_muted(&d.id).unwrap_or(false),
+            ..Default::default()
+        });
+        Ok(())
+    }
+
+    /// Update `muted`, plus the live level and "is it running" state for the settings window.
+    /// Returns true if the mute state changed.
+    fn refresh_mutes(&mut self) -> bool {
+        let sessions = self.audio.sessions();
+        let (mut muted, mut levels, mut present) = ([false; CONTROLS], [None; CONTROLS], [true; CONTROLS]);
+        for i in 0..CONTROLS {
+            match &self.cfg.profile().controls[i].turn {
+                Turn::App { apps } => {
+                    let m = self.matcher(apps);
+                    let hits: Vec<&Session> = sessions.iter().filter(|s| m(s)).collect();
+                    present[i] = !hits.is_empty();
+                    levels[i] = hits.first().map(|s| s.volume());
+                    muted[i] = !hits.is_empty() && hits.iter().all(|s| s.muted());
+                }
+                Turn::Device { device } => {
+                    let d = self.audio.find(device);
+                    present[i] = d.is_some();
+                    if let Some(d) = d {
+                        levels[i] = self.audio.device_volume(&d.id);
+                        muted[i] = self.audio.device_muted(&d.id).unwrap_or(false);
+                    }
+                }
+                _ => {}
+            }
+        }
+        {
+            let mut s = crate::lock(&self.shared);
+            s.levels = levels;
+            s.present = present;
+        }
+        let p = self.cfg.profile();
+        let level_lights = (0..CONTROLS).any(|i| p.controls[i].light.mode == "level") && p.lighting.mode == "custom";
+        let levels_moved = levels.iter().zip(&self.levels).any(|(a, b)| (a.unwrap_or(0.0) - b.unwrap_or(0.0)).abs() > 0.005);
+        self.levels = levels;
+        // Meters for "pulse with audio" lights.
+        let wants_meter = |i: usize| p.lighting.mode == "custom" && p.controls[i].light.mode == "meter";
+        let meters: Vec<Vec<IAudioMeterInformation>> = (0..CONTROLS).map(|i| {
+            if !wants_meter(i) {
+                return vec![];
+            }
+            match &p.controls[i].turn {
+                Turn::App { apps } => {
+                    let m = self.matcher(apps);
+                    sessions.iter().filter(|s| m(s)).filter_map(|s| s.meter.clone()).collect()
+                }
+                Turn::Device { device } => self.audio.device_meter(device).into_iter().collect(),
+                _ => vec![],
+            }
+        }).collect();
+        self.meters = if (0..CONTROLS).any(wants_meter) { meters } else { vec![] };
+        let relight_levels = level_lights && levels_moved;
+        // Only controls with a mute color change their LEDs.
+        let p = self.cfg.profile();
+        for (i, m) in muted.iter_mut().enumerate() {
+            *m &= p.lighting.mode == "custom" && !p.controls[i].light.mute_color.is_empty();
+        }
+        let changed = muted != self.muted;
+        self.muted = muted;
+        changed || relight_levels
+    }
+
+    /// Periodic work: auto profile switching, mute LEDs, live levels, external config edits.
+    fn poll(&mut self) {
+        let fg = audio::foreground_exe();
+        if self.test_until.is_some_and(|t| Instant::now() >= t) {
+            self.handle(Msg::TestMode(false));
+        }
+        // Switching to an app is what clears its taskbar flash.
+        self.flashing.remove(&fg);
+        if self.update_alerts() && !self.animating() {
+            self.relight();
+        }
+        if !fg.is_empty() && fg != "pcpanel-revive.exe" {
+            let hit = self.cfg.profiles.iter()
+                .find(|(_, p)| p.auto_apps.iter().any(|a| norm(a) == fg))
+                .map(|(n, _)| n.clone());
+            match hit {
+                Some(name) if name != self.cfg.active => {
+                    if self.auto_prev.is_none() {
+                        self.auto_prev = Some(self.cfg.active.clone());
+                    }
+                    self.activate(&name, false);
+                }
+                None => {
+                    if let Some(prev) = self.auto_prev.take() {
+                        self.activate(&prev, false);
+                    }
+                }
+                _ => {}
+            }
+        }
+        if self.refresh_mutes() {
+            self.relight();
+        }
+        let m = mtime();
+        if m.is_some() && m != self.cfg_mtime {
+            self.handle(Msg::Reload);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn norm_names() {
+        assert_eq!(norm(" Spotify "), "spotify.exe");
+        assert_eq!(norm("Discord.exe"), "discord.exe");
+        assert_eq!(norm("focused"), "focused");
+    }
+
+    #[test]
+    fn alert_lights_one_knob_over_rainbow() {
+        let mut cfg = Config::default();
+        cfg.normalize();
+        let mut p = cfg.profile().clone();
+        p.lighting.mode = "rainbow".into();
+        p.lighting.brightness = 100;
+        let a = Alert { app: "discord.exe".into(), lights: vec!["k2".into()], effect: "solid".into(), color: "#a64dff".into(), ..Alert::default() };
+        let f = alert_profile(&p, &[a], &[true], 0.0);
+        let r = hid::lighting(hid::Model::Pro, &f, &[false; CONTROLS]);
+        assert_eq!(r.len(), 4, "custom lighting = knobs, labels, sliders, logo");
+        assert_eq!(&r[0][..2], &[5, 2]);
+        assert_eq!(&r[0][9..13], &[1, 0xa6, 0x4d, 0xff], "K2 static purple");
+        assert_eq!(r[0][2], 1, "K1 static (imitated rainbow)");
+        assert_eq!(&r[3][..3], &[5, 3, 2], "logo keeps firmware rainbow");
+    }
+
+    #[test]
+    fn live_lights_and_self_test() {
+        let l = Light { mode: "meter".into(), color: "#ff0000".into(), color2: "#00ff00".into(), mute_color: "#123456".into() };
+        let quiet = live_light(&l, 0.0, true);
+        assert_eq!((quiet.mode.as_str(), quiet.color.as_str(), quiet.color2.as_str()), ("gradient", "#000000", "#000000"));
+        let half = live_light(&l, 0.5, true);
+        assert_eq!((half.color.as_str(), half.color2.as_str()), ("#ff0000", "#000000"), "bottom full, top off at 50%");
+        assert_eq!(live_light(&l, 1.0, true).color2, "#00ff00");
+        assert_eq!(live_light(&l, 0.3, true).mute_color, "#123456", "mute color still wins");
+        let lvl = Light { mode: "level".into(), ..l.clone() };
+        assert_eq!(live_light(&lvl, 1.0, false).color, "#00ff00");
+        let mut cfg = Config::default();
+        cfg.normalize();
+        let t = test_profile(cfg.profile(), 6);
+        let r = hid::lighting(hid::Model::Pro, &t, &[false; CONTROLS]);
+        assert!(r[0][2..].iter().all(|&b| b == 0), "knobs off");
+        assert_eq!(&r[2][2 + 7..2 + 7 + 4], &[1, 0xff, 0xff, 0xff], "slider 2 white");
+        assert_eq!(r[3][2], 0, "logo off");
+    }
+
+    #[test]
+    fn pickup_waits_until_the_control_reaches_the_volume() {
+        let mut side = None;
+        assert!(!picks_up(0.20, 0.60, &mut side)); // below the volume: ignored
+        assert!(!picks_up(0.40, 0.60, &mut side));
+        assert!(picks_up(0.58, 0.60, &mut side)); // within the window
+        let mut side = None;
+        assert!(!picks_up(0.20, 0.60, &mut side));
+        assert!(picks_up(0.90, 0.60, &mut side)); // swept past it in one jump
+        let mut side = None;
+        assert!(!picks_up(0.90, 0.60, &mut side)); // above, then still above
+        assert!(!picks_up(0.80, 0.60, &mut side));
+    }
+}
