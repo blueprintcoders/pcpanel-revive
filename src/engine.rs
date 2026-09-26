@@ -759,7 +759,7 @@ impl Engine {
             Action::TypeText { text } => sys::type_text(&text),
             Action::MuteMic => self.toggle_device_mute(i, "default_capture")?,
             Action::LockPc => sys::lock(),
-            Action::MonitorOff { displays } if displays.is_empty() => sys::monitor_off(),
+            Action::MonitorOff { displays } if displays.is_empty() => sys::monitor_off()?,
             Action::MonitorOff { displays } => sys::toggle_displays(&displays)?,
             Action::LightsToggle => {
                 let active = self.cfg.active.clone();

@@ -10,6 +10,9 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 /// HSHELL_REDRAW | HSHELL_HIGHBIT: sent when a window flashes its taskbar button.
 const HSHELL_FLASH: u32 = 0x8006;
 
+/// Our hidden window, also used to send "monitor off" (Windows ignores it when broadcast from a windowless background thread).
+pub static HWND_RAW: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
 thread_local! {
     static TX: RefCell<Option<Sender<Msg>>> = const { RefCell::new(None) };
     static HOOK_MSG: Cell<u32> = const { Cell::new(0) };
@@ -22,6 +25,7 @@ pub fn init(tx: Sender<Msg>) {
         RegisterClassW(&class);
         // Shell hooks need a real top-level window (not message-only); it's never shown.
         let Ok(hwnd) = CreateWindowExW(WS_EX_TOOLWINDOW, w!("PCPanelReviveShellHook"), w!(""), WS_POPUP, 0, 0, 0, 0, None, None, Some(hinst.into()), None) else { return };
+        HWND_RAW.store(hwnd.0 as isize, std::sync::atomic::Ordering::Relaxed);
         HOOK_MSG.set(RegisterWindowMessageW(w!("SHELLHOOK")));
         TX.with(|t| *t.borrow_mut() = Some(tx));
         let _ = RegisterShellHookWindow(hwnd);

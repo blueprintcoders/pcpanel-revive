@@ -272,7 +272,16 @@ pub fn toggle_displays(ids: &[String]) -> Result<(), String> {
         for p in &phys {
             let (mut cur, mut max) = (0u32, 0u32);
             let on = GetVCPFeatureAndVCPFeatureReply(p.hPhysicalMonitor, 0xD6, None, &mut cur, Some(&mut max)) == 0 || cur == 1;
-            if SetVCPFeature(p.hPhysicalMonitor, 0xD6, if on { 5 } else { 1 }) != 0 {
+            // Monitors list which power codes they accept, e.g. "D6(01 04)"; many ignore 5 (off) but take 4 (standby).
+            let mut caps = String::new();
+            let mut len = 0u32;
+            if GetCapabilitiesStringLength(p.hPhysicalMonitor, &mut len) != 0 && len > 0 {
+                let mut buf = vec![0u8; len as usize];
+                if CapabilitiesRequestAndCapabilitiesReply(p.hPhysicalMonitor, &mut buf) != 0 {
+                    caps = String::from_utf8_lossy(&buf).trim_end_matches(' ').to_string();
+                }
+            }
+            if SetVCPFeature(p.hPhysicalMonitor, 0xD6, if on { off_code(&caps) } else { 1 }) != 0 {
                 done += 1;
             }
         }
@@ -284,10 +293,31 @@ pub fn toggle_displays(ids: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-pub fn monitor_off() {
-    use windows::Win32::Foundation::{LPARAM, WPARAM};
-    use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, HWND_BROADCAST, SC_MONITORPOWER, WM_SYSCOMMAND};
-    unsafe { let _ = PostMessageW(Some(HWND_BROADCAST), WM_SYSCOMMAND, WPARAM(SC_MONITORPOWER as usize), LPARAM(2)); }
+/// The DDC/CI power code a monitor accepts for "off": 5 if it lists it, else 4 (standby), else 5.
+fn off_code(caps: &str) -> u32 {
+    let lower = caps.to_lowercase();
+    let codes: Vec<u32> = lower.find("d6(")
+        .and_then(|at| lower[at + 3..].split(')').next())
+        .map(|list| list.split_whitespace().filter_map(|c| u32::from_str_radix(c, 16).ok()).collect())
+        .unwrap_or_default();
+    if codes.contains(&5) || !codes.contains(&4) { 5 } else { 4 }
+}
+
+/// Turn every display off (they wake on mouse/keyboard input).
+/// Sent to our own window so its default handling performs it; a broadcast from a background thread is often ignored.
+pub fn monitor_off() -> Result<(), String> {
+    use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, SC_MONITORPOWER, WM_SYSCOMMAND};
+    let raw = crate::shellhook::HWND_RAW.load(std::sync::atomic::Ordering::Relaxed);
+    if raw == 0 {
+        return Err("the app's helper window isn't ready yet".into());
+    }
+    // Give the knob release a moment to pass so it can't count as "activity" and wake the screens.
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        unsafe { let _ = PostMessageW(Some(HWND(raw as _)), WM_SYSCOMMAND, WPARAM(SC_MONITORPOWER as usize), LPARAM(2)); }
+    });
+    Ok(())
 }
 
 /// Processes of the official PCPanel software (it runs as javaw.exe + sndctrl.exe from its install folder).
@@ -345,6 +375,15 @@ pub fn set_autostart(on: bool) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn picks_the_off_code_the_monitor_supports() {
+        // Real capability strings from an LG MP67 and WK95U: only 1 (on) and 4 (standby).
+        assert_eq!(super::off_code("vcp(02 04 C9D6(01 04)DFE0E1E3(00 01))"), 4);
+        assert_eq!(super::off_code("vcp(02 04 D6(01 04) DF 62)"), 4);
+        assert_eq!(super::off_code("vcp(D6(01 04 05))"), 5);
+        assert_eq!(super::off_code("no d6 listed"), 5);
+    }
+
     #[test]
     fn parses_keys() {
         assert_eq!(super::vk("a"), Some((b'A' as u16, false)));
