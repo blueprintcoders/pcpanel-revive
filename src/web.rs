@@ -93,6 +93,10 @@ fn handle(mut req: Request, tx: &Sender<Msg>, shared: &Mutex<Shared>, audio: Opt
             let _ = tx.send(Msg::PreviewAlert(body.trim().parse().unwrap_or(usize::MAX)));
             req.respond(json_response(json!({"ok": true})))
         }
+        (Method::Get, "/api/notif-sources") => {
+            let list: Vec<String> = crate::notif::sources().unwrap_or_default().into_iter().map(|s| s.handler).collect();
+            req.respond(json_response(json!(list)))
+        }
         (Method::Get, "/api/displays") => {
             let list: Vec<_> = crate::sys::displays().into_iter().map(|(id, name)| json!({"id": id, "name": name})).collect();
             req.respond(json_response(json!(list)))

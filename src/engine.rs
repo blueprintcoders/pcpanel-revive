@@ -8,7 +8,7 @@ use crate::{log, obs::Obs, sys, Msg, Shared, WM_OSD, WM_REFRESH};
 use serde_json::json;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant, SystemTime};
 
 const POLL: Duration = Duration::from_millis(500);
@@ -54,6 +54,10 @@ struct Engine {
     focus_muted: Vec<String>,
     /// Apps whose taskbar button flashed and that haven't been switched to since.
     flashing: HashSet<String>,
+    /// Apps with a new Windows notification since you last switched to them.
+    notified: HashSet<String>,
+    /// Newest notification seen per source; None until the first read (old ones don't count).
+    notif_seen: Option<HashMap<String, i64>>,
     alerts_on: Vec<bool>,
     preview: Option<(usize, Instant)>,
     /// When each alert started showing, and whether it ran past its time limit.
@@ -84,7 +88,7 @@ pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Bo
         press_deadline: [None; KNOBS], hold_deadline: [None; KNOBS], hold_fired: [false; KNOBS], debounce: [Debounce::default(); KNOBS],
         engaged: [false; CONTROLS], last_set: [None; CONTROLS], side: [None; CONTROLS], force_sync: [false; CONTROLS],
         auto_prev: None, cfg_mtime: mtime(), lights_before: 0, focus_muted: vec![],
-        flashing: HashSet::new(), alerts_on: vec![], preview: None, anim_t0: Instant::now(),
+        flashing: HashSet::new(), notified: HashSet::new(), notif_seen: None, alerts_on: vec![], preview: None, anim_t0: Instant::now(),
         alert_since: vec![], alert_expired: vec![], levels: [None; CONTROLS], meters: vec![], peaks: [0.0; CONTROLS],
         connected: false, test_until: None, light_test: None, polls: 0,
     };
@@ -423,6 +427,40 @@ impl Engine {
         self.alerts_on.iter().any(|&on| on) || (self.connected && !self.meters.is_empty() && self.light_test.is_none())
     }
 
+    /// New Windows notifications from apps that have a "notification" alert.
+    fn check_notifications(&mut self) {
+        let wanted: Vec<(String, String)> = self.cfg.alerts.iter()
+            .filter(|a| a.enabled && a.trigger == "notification")
+            .map(|a| (norm(&a.app), a.pattern.clone()))
+            .collect();
+        if wanted.is_empty() {
+            self.notif_seen = None;
+            return;
+        }
+        let sources = match crate::notif::sources() {
+            Ok(s) => s,
+            Err(e) => return log(&self.shared, format!("notifications: {e}")),
+        };
+        let first = self.notif_seen.is_none();
+        let seen = self.notif_seen.get_or_insert_with(HashMap::new);
+        for s in &sources {
+            let prev = seen.insert(s.handler.clone(), s.latest).unwrap_or(0);
+            if !first && s.latest > prev {
+                for (exe, pattern) in &wanted {
+                    if crate::notif::matches(&s.handler, exe, pattern) {
+                        self.notified.insert(exe.clone());
+                    }
+                }
+            }
+        }
+        seen.retain(|h, _| sources.iter().any(|s| &s.handler == h));
+        // Dismissing / clearing an app's notifications clears its alert.
+        self.notified.retain(|exe| {
+            wanted.iter().filter(|(e, _)| e == exe)
+                .any(|(e, p)| sources.iter().any(|s| s.count > 0 && crate::notif::matches(&s.handler, e, p)))
+        });
+    }
+
     fn testing(&self) -> bool {
         self.test_until.is_some_and(|t| Instant::now() < t)
     }
@@ -472,6 +510,7 @@ impl Engine {
             let exe = norm(&a.app);
             let raw = a.enabled && !exe.is_empty() && match a.trigger.as_str() {
                 "title" => sys::window_titles(&exe).iter().any(|t| a.title_matches(t)),
+                "notification" => self.notified.contains(&exe),
                 _ => self.flashing.contains(&exe),
             };
             if !raw {
@@ -482,8 +521,9 @@ impl Engine {
                 if a.timeout_min > 0 && !self.alert_expired[n] && since.elapsed() >= Duration::from_secs(a.timeout_min as u64 * 60) {
                     self.alert_expired[n] = true;
                     log(&self.shared, format!("alert off after {} min: {}", a.timeout_min, a.app));
-                    // A taskbar flash is forgotten, so the next message lights it again.
+                    // A taskbar flash / notification is forgotten, so the next one lights it again.
                     self.flashing.remove(&exe);
+                    self.notified.remove(&exe);
                 }
             }
             on[n] = self.preview.is_some_and(|(p, _)| p == n) || (raw && !self.alert_expired[n]);
@@ -949,8 +989,12 @@ impl Engine {
         if self.test_until.is_some_and(|t| Instant::now() >= t) {
             self.handle(Msg::TestMode(false));
         }
-        // Switching to an app is what clears its taskbar flash.
+        // Switching to an app is what clears its taskbar flash / notification.
         self.flashing.remove(&fg);
+        self.notified.remove(&fg);
+        if self.polls % 4 == 0 {
+            self.check_notifications();
+        }
         if self.update_alerts() && !self.animating() {
             self.relight();
         }

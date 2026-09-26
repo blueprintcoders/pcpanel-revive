@@ -1051,7 +1051,9 @@ function alertsTab() {
         h('button', {onclick: () => fetch('/api/alert-preview', {method: 'POST', headers: {'X-PCP': '1'}, body: String(n)})}, 'Preview 5 s'),
         h('button', {class: 'x', title: 'Delete alert', onclick: () => { cfg.alerts.splice(n, 1); touch(); draw(); drawDevice(); }}, '×')),
       row('App', appOne(a, 'app')),
-      row('When', select(a, 'trigger', {flash: 'It flashes its taskbar button (new message)', title: 'Its window title contains...'}, draw)),
+      row('When', select(a, 'trigger', {flash: 'It flashes its taskbar button (new message)', notification: 'It shows a Windows notification', title: 'Its window title contains...'}, draw)),
+      a.trigger === 'notification' ? [row('Source', comboFree(() => a.pattern || '', v => { a.pattern = v; touch(); }, notifSources.map(v => ({value: v, label: v})), {placeholder: 'automatic, from the app name'})),
+        h('div', {class: 'hint indent'}, 'Lights on each new notification from this app; clears when you open the app or dismiss its notifications. If it doesn\'t fire, pick the app\'s entry under Source.')] : null,
       a.trigger === 'title' ? row('Text', h('input', {value: a.pattern || '', placeholder: 'leave empty for an unread count like (3)', oninput: e => { a.pattern = e.target.value; touch(); }})) : null,
       row('Lights', h('div', {class: 'light-picks'}, (isPro() ? LIGHTS : LIGHTS.slice(0, 4)).map(k => h('button', {class: 'pick' + ((a.lights || []).includes(k) ? ' on' : ''), onclick: () => {
         a.lights = (a.lights || []).includes(k) ? a.lights.filter(x => x !== k) : [...(a.lights || []), k]; touch(); draw(); drawDevice();
@@ -1065,6 +1067,7 @@ function alertsTab() {
     }}, '+ Add alert'),
     h('div', {class: 'hint', style: 'margin-top:14px'},
       'Taskbar flash works for Discord (Settings > Notifications > Enable Taskbar Flashing), Teams, Slack, Telegram and most chat apps. ',
+      'Windows notification works for apps that pop up a notification instead, like Outlook or Teams. ',
       'The light stops when you switch to the app. Title works for apps that show an unread count in their window title. ',
       'Alerts apply to every profile. While one shows, rainbow/wave/breath lighting is imitated so only the alert LEDs change.'));
   draw();
@@ -1314,11 +1317,12 @@ async function poll() {
   } catch (e) { $('#conn').textContent = 'background app not running'; $('#dot').className = 'dot'; }
   setTimeout(poll, 300);
 }
-let displayList = [];
+let displayList = [], notifSources = [];
 async function loadDevices() {
   try {
     deviceList = await (await fetch('/api/devices')).json();
     displayList = await (await fetch('/api/displays')).json();
+    notifSources = await (await fetch('/api/notif-sources')).json();
   } catch (e) {}
 }
 // Check displays to toggle just those (DDC/CI); none checked = every display.

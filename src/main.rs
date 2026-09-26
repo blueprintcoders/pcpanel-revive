@@ -6,6 +6,7 @@ mod import;
 mod apps;
 mod settings;
 mod hid;
+mod notif;
 mod obs;
 mod shellhook;
 mod osd;
