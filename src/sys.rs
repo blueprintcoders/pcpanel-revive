@@ -290,6 +290,40 @@ pub fn monitor_off() {
     unsafe { let _ = PostMessageW(Some(HWND_BROADCAST), WM_SYSCOMMAND, WPARAM(SC_MONITORPOWER as usize), LPARAM(2)); }
 }
 
+/// Processes of the official PCPanel software (it runs as javaw.exe + sndctrl.exe from its install folder).
+pub fn official_app_pids() -> Vec<u32> {
+    let mut pids = vec![0u32; 4096];
+    let mut used = 0u32;
+    let ok = unsafe {
+        windows::Win32::System::ProcessStatus::EnumProcesses(pids.as_mut_ptr(), (pids.len() * 4) as u32, &mut used).is_ok()
+    };
+    if !ok {
+        return vec![];
+    }
+    pids.truncate(used as usize / 4);
+    pids.into_iter()
+        .filter(|&pid| crate::audio::process_path(pid).to_lowercase().contains("\\pcpanel software\\"))
+        .collect()
+}
+
+/// Close the official PCPanel software; optionally stop it starting with Windows.
+pub fn close_official_app(stop_autostart: bool) -> Result<usize, String> {
+    let pids = official_app_pids();
+    for pid in &pids {
+        let _ = Command::new("taskkill").args(["/F", "/PID", &pid.to_string()]).creation_flags(NO_WINDOW).status();
+    }
+    if stop_autostart {
+        // Remove only Run entries that launch the official app.
+        let key = windows_registry::CURRENT_USER.create("Software\\Microsoft\\Windows\\CurrentVersion\\Run").map_err(|e| e.to_string())?;
+        for name in key.values().map_err(|e| e.to_string())?.map(|(n, _)| n).collect::<Vec<_>>() {
+            if key.get_string(&name).is_ok_and(|cmd| cmd.to_lowercase().contains("pcpanel software\\pcpanel.exe")) {
+                key.remove_value(&name).map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    Ok(pids.len())
+}
+
 const RUN_KEY: PCWSTR = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run");
 const APP_VALUE: PCWSTR = w!("PCPanelRevive");
 

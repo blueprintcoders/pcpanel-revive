@@ -65,6 +65,7 @@ struct Engine {
     connected: bool,
     /// Panel self-test: inputs don't run actions until this time.
     test_until: Option<Instant>,
+    polls: u64,
     light_test: Option<usize>,
     anim_t0: Instant,
 }
@@ -83,7 +84,7 @@ pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Bo
         auto_prev: None, cfg_mtime: mtime(), lights_before: 0, focus_muted: vec![],
         flashing: HashSet::new(), alerts_on: vec![], preview: None, anim_t0: Instant::now(),
         alert_since: vec![], alert_expired: vec![], levels: [None; CONTROLS], meters: vec![], peaks: [0.0; CONTROLS],
-        connected: false, test_until: None, light_test: None,
+        connected: false, test_until: None, light_test: None, polls: 0,
     };
     e.publish();
     let mut next_poll = Instant::now();
@@ -925,6 +926,15 @@ impl Engine {
 
     /// Periodic work: auto profile switching, mute LEDs, live levels, external config edits.
     fn poll(&mut self) {
+        // Every ~5 s: is the official PCPanel software fighting us for the panel?
+        self.polls += 1;
+        if self.polls % 10 == 1 {
+            let running = !sys::official_app_pids().is_empty();
+            let was = std::mem::replace(&mut crate::lock(&self.shared).official_running, running);
+            if running && !was {
+                log(&self.shared, "the official PCPanel software is also running - both apps react to the panel".into());
+            }
+        }
         let fg = audio::foreground_exe();
         if self.test_until.is_some_and(|t| Instant::now() >= t) {
             self.handle(Msg::TestMode(false));

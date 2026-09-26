@@ -48,7 +48,7 @@ fn handle(mut req: Request, tx: &Sender<Msg>, shared: &Mutex<Shared>, audio: Opt
             let s = crate::lock(&shared);
             let body = json!({
                 "config": s.config, "values": s.values, "connected": s.connected, "muted": s.muted,
-                "levels": s.levels, "present": s.present, "alerts_on": s.alerts_on, "model": s.model.id(), "model_name": s.model.name(), "buttons": s.buttons, "peaks": s.peaks, "lights": {"gen": s.lights_gen, "written": s.lights_written, "reports": s.lights.iter().map(|r| r[..9].to_vec()).collect::<Vec<_>>()},
+                "levels": s.levels, "present": s.present, "alerts_on": s.alerts_on, "model": s.model.id(), "model_name": s.model.name(), "buttons": s.buttons, "peaks": s.peaks, "official_running": s.official_running, "lights": {"gen": s.lights_gen, "written": s.lights_written, "reports": s.lights.iter().map(|r| r[..9].to_vec()).collect::<Vec<_>>()},
                 "log": s.log, "autostart": crate::sys::autostart_enabled(),
             });
             drop(s);
@@ -70,6 +70,18 @@ fn handle(mut req: Request, tx: &Sender<Msg>, shared: &Mutex<Shared>, audio: Opt
                 led => Msg::TestLight(led.parse().ok().filter(|&n: &usize| n <= crate::config::CONTROLS)),
             });
             req.respond(json_response(json!({"ok": true})))
+        }
+        (Method::Post, "/api/close-official") if header(&req, "X-PCP").is_some() => {
+            let mut body = String::new();
+            req.as_reader().read_to_string(&mut body)?;
+            match crate::sys::close_official_app(body.trim() == "stop-autostart") {
+                Ok(n) => {
+                    crate::lock(shared).official_running = false;
+                    log(shared, format!("closed the official PCPanel software ({n} processes){}", if body.trim() == "stop-autostart" { " and stopped it starting with Windows" } else { "" }));
+                    req.respond(json_response(json!({"closed": n})))
+                }
+                Err(e) => req.respond(Response::from_string(e).with_status_code(500)),
+            }
         }
         (Method::Post, "/api/open-log") if header(&req, "X-PCP").is_some() => {
             let _ = crate::sys::open(&crate::log_path().to_string_lossy());

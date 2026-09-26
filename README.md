@@ -156,6 +156,7 @@ The original wooden PCPanel has no lights, so lighting and alerts are hidden for
 | Problem | Try |
 |---|---|
 | "PCPanel not found" | Quit the official PCPanel software, then unplug and replug the panel. |
+| A button does two things, or lights and volumes "fight" | The official software is still running in the background (it shows up as `javaw.exe`). The app warns you about this; click **Close it**. |
 | A knob does nothing | Check its caption. If it's dimmed, the app isn't running. The ▶ button tests the action directly. |
 | Discord alert never lights | Turn on Discord's *Settings > Notifications > Enable Taskbar Flashing*. |
 | Something went wrong | *Log > Open log file*. The full history, including any crash details, is in there. |

@@ -67,6 +67,8 @@ pub struct Shared {
     pub buttons: [bool; KNOBS],
     /// Live audio levels of "pulse with audio" lights (0..1).
     pub peaks: [f32; CONTROLS],
+    /// The official PCPanel software is running too (both apps would react to the panel).
+    pub official_running: bool,
     last_log: String,
 }
 

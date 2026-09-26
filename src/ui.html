@@ -200,6 +200,7 @@ textarea{flex:1;min-width:220px;font:12px Consolas,monospace;color:var(--text);b
 #device svg.wood .cap{fill:#3b2412}
 #device svg.wood .cap.unset{fill:#7a5a3a}
 #device svg.wood .glyph{filter:brightness(.25)}
+.notice.warn{border-color:#7a5520;background:#2a2112}
 </style>
 </head>
 <body>
@@ -214,6 +215,7 @@ textarea{flex:1;min-width:220px;font:12px Consolas,monospace;color:var(--text);b
   <button id="undo" class="icon" title="Undo (Ctrl+Z)" disabled>↶</button><button id="redo" class="icon" title="Redo (Ctrl+Y)" disabled>↷</button>
 </header>
 <nav id="tabs"></nav>
+<div id="conflict" class="notice warn" hidden></div>
 <div id="notice" class="notice" hidden></div>
 <main id="main"></main>
 <input type="file" id="importFile" accept=".json" hidden>
@@ -1197,6 +1199,24 @@ $('#importFile').onchange = async e => {
   e.target.value = '';
   if (f) importStock(await f.text());
 };
+let conflictShown = null;
+function drawConflict(on) {
+  if (on === conflictShown) return;
+  conflictShown = on;
+  const el = $('#conflict');
+  el.hidden = !on;
+  if (!on) return put(el);
+  const stop = h('input', {type: 'checkbox', checked: true});
+  put(el, h('div', {class: 'nt-body'}, h('b', {}, 'The official PCPanel software is also running.'),
+      ' Both apps react to your panel, so a button can do two things at once and the lights and volumes fight each other.',
+      h('div', {style: 'margin-top:6px'}, h('label', {}, stop, ' Also stop it starting with Windows'))),
+    h('button', {class: 'pri', onclick: async e => {
+      e.currentTarget.disabled = true;
+      const r = await fetch('/api/close-official', {method: 'POST', headers: {'X-PCP': '1'}, body: stop.checked ? 'stop-autostart' : ''});
+      $('#status').textContent = r.ok ? 'Closed the official PCPanel software' : 'Couldn\'t close it: ' + await r.text();
+    }}, 'Close it'));
+}
+
 async function importStock(text) {
   const r = await fetch('/api/import', {method: 'POST', headers: {'X-PCP': '1'}, body: text || ''});
   if (!r.ok) { $('#status').textContent = await r.text(); return; }
@@ -1267,6 +1287,7 @@ async function poll() {
     const moved = lastValues.length ? s.values.findIndex((v, i) => Math.abs(v - lastValues[i]) > 2) : -1;
     const changed = JSON.stringify(s.values) !== JSON.stringify(lastValues) || JSON.stringify(s.muted) !== JSON.stringify(muted);
     const presentChanged = JSON.stringify(s.present) !== JSON.stringify(present);
+    drawConflict(!!s.official_running);
     const peaksChanged = JSON.stringify(s.peaks || []) !== JSON.stringify(peaks);
     peaks = s.peaks || [];
     if (peaksChanged) drawDevice();
