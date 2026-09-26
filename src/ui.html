@@ -165,7 +165,8 @@ button.x.try{color:var(--acc)}
 button.icon{width:34px;padding:5px 0;font-size:16px;line-height:1}
 button.icon:disabled{opacity:.35}
 #status{min-width:110px;text-align:right}
-.displays{display:flex;flex-direction:column;gap:4px}
+.displays{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0}
+.row:has(> .displays)>label:first-child{align-self:flex-start;padding-top:2px}
 .editor .row>input:not([type]),.editor .row>.combo.free{flex:1;min-width:220px}
 textarea{flex:1;min-width:220px;font:12px Consolas,monospace;color:var(--text);background:#26262e;border:1px solid var(--line);border-radius:6px;padding:6px 9px;resize:vertical}
 .presets-panel{max-width:1100px}
@@ -1000,6 +1001,7 @@ function settingsTab() {
       h('div', {class: 'hint indent'}, 'If a volume was changed somewhere else, the dial takes over only once it reaches that volume, instead of snapping it to the dial\'s position.'),
       row('Double press', num(cfg, 'double_press_ms', 100, 1000, 10), h('span', {class: 'hint'}, 'ms between presses')),
       row('Hold', num(cfg, 'hold_ms', 250, 3000, 50), h('span', {class: 'hint'}, 'ms to count as a hold')),
+      row('Debounce', num(cfg, 'button_debounce_ms', 5, 200, 5), h('span', {class: 'hint'}, 'ms - raise it if one press sometimes counts as two')),
       row('Deadband', num(cfg, 'deadband', 0, 20), h('span', {class: 'hint'}, 'ignore changes this small (0-255 scale) - fixes slider twitch')),
       row('', check(cfg, 'apply_on_connect', 'Apply dial positions when the device connects'))),
     h('div', {class: 'panel'}, h('h2', {}, 'Volume popup'),

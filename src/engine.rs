@@ -37,6 +37,8 @@ struct Engine {
     press_deadline: [Option<Instant>; KNOBS],
     hold_deadline: [Option<Instant>; KNOBS],
     hold_fired: [bool; KNOBS],
+    /// Button contacts chatter for a few ms; this turns raw edges into clean presses.
+    debounce: [Debounce; KNOBS],
     /// Pickup state per control: taken over, level we last set, which side of the volume the control was on.
     engaged: [bool; CONTROLS],
     last_set: [Option<f32>; CONTROLS],
@@ -76,7 +78,7 @@ pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Bo
     let mut e = Engine {
         cfg, shared, post, audio, obs: Obs::default(),
         sent: [None; CONTROLS], pending: [None; CONTROLS], last_cmd: [None; CONTROLS], muted: [false; CONTROLS],
-        press_deadline: [None; KNOBS], hold_deadline: [None; KNOBS], hold_fired: [false; KNOBS],
+        press_deadline: [None; KNOBS], hold_deadline: [None; KNOBS], hold_fired: [false; KNOBS], debounce: [Debounce::default(); KNOBS],
         engaged: [false; CONTROLS], last_set: [None; CONTROLS], side: [None; CONTROLS],
         auto_prev: None, cfg_mtime: mtime(), lights_before: 0, focus_muted: vec![],
         flashing: HashSet::new(), alerts_on: vec![], preview: None, anim_t0: Instant::now(),
@@ -94,6 +96,10 @@ pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Bo
         }
         for d in e.press_deadline.iter().chain(&e.hold_deadline).flatten() {
             wake = wake.min(*d);
+        }
+        let settle = Duration::from_millis(e.cfg.button_debounce_ms);
+        for d in e.debounce.iter().filter_map(|d| d.pending(settle)) {
+            wake = wake.min(d);
         }
         if e.pending.iter().any(Option::is_some) {
             wake = wake.min(now + Duration::from_millis(30));
@@ -203,6 +209,37 @@ fn test_profile(p: &Profile, led: usize) -> Profile {
     f
 }
 
+/// Button debouncer: the first edge counts at once; edges within `settle` of it are chatter,
+/// and whatever state the contact settled in is applied when the window ends.
+#[derive(Clone, Copy, Default)]
+struct Debounce {
+    raw: bool,
+    state: bool,
+    changed: Option<Instant>,
+}
+
+impl Debounce {
+    /// A raw edge from the device. Returns a clean edge to act on now, if any.
+    fn raw(&mut self, down: bool, now: Instant, settle: Duration) -> Option<bool> {
+        self.raw = down;
+        self.settle(now, settle)
+    }
+    /// Apply the settled state once the chatter window has passed.
+    fn settle(&mut self, now: Instant, settle: Duration) -> Option<bool> {
+        let quiet = self.changed.is_none_or(|t| now.duration_since(t) >= settle);
+        if self.raw != self.state && quiet {
+            self.state = self.raw;
+            self.changed = Some(now);
+            return Some(self.state);
+        }
+        None
+    }
+    /// When to check again for a state change that arrived during the window.
+    fn pending(&self, settle: Duration) -> Option<Instant> {
+        (self.raw != self.state).then(|| self.changed.map_or_else(Instant::now, |t| t + settle))
+    }
+}
+
 fn hsv_hex(h: f32, s: f32, v: f32) -> String {
     let c = v * s;
     let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
@@ -283,20 +320,9 @@ impl Engine {
                 self.pending[index] = Some(value);
             }
             Msg::Hid(Event::Button { index, down }) => {
-                crate::lock(&self.shared).buttons[index] = down;
-                if self.testing() {
-                    return;
-                }
-                let has_hold = !self.cfg.profile().controls[index].hold.is_empty();
-                match (down, has_hold) {
-                    (true, true) => {
-                        self.hold_fired[index] = false;
-                        self.hold_deadline[index] = Some(Instant::now() + Duration::from_millis(self.cfg.hold_ms));
-                    }
-                    (true, false) => self.click(index),
-                    // Released before the hold time: it was a normal click.
-                    (false, true) if !self.hold_fired[index] && self.hold_deadline[index].take().is_some() => self.click(index),
-                    _ => {}
+                let settle = Duration::from_millis(self.cfg.button_debounce_ms);
+                if let Some(down) = self.debounce[index].raw(down, Instant::now(), settle) {
+                    self.button(index, down);
                 }
             }
             Msg::Profile(name) => {
@@ -345,6 +371,25 @@ impl Engine {
                 self.refresh_mutes();
                 self.relight();
             }
+        }
+    }
+
+    /// A clean (debounced) button edge.
+    fn button(&mut self, index: usize, down: bool) {
+        crate::lock(&self.shared).buttons[index] = down;
+        if self.testing() {
+            return;
+        }
+        let has_hold = !self.cfg.profile().controls[index].hold.is_empty();
+        match (down, has_hold) {
+            (true, true) => {
+                self.hold_fired[index] = false;
+                self.hold_deadline[index] = Some(Instant::now() + Duration::from_millis(self.cfg.hold_ms));
+            }
+            (true, false) => self.click(index),
+            // Released before the hold time: it was a normal click.
+            (false, true) if !self.hold_fired[index] && self.hold_deadline[index].take().is_some() => self.click(index),
+            _ => {}
         }
     }
 
@@ -627,6 +672,12 @@ impl Engine {
 
     fn fire_due_presses(&mut self) {
         let now = Instant::now();
+        let settle = Duration::from_millis(self.cfg.button_debounce_ms);
+        for i in 0..KNOBS {
+            if let Some(down) = self.debounce[i].settle(now, settle) {
+                self.button(i, down);
+            }
+        }
         for i in 0..KNOBS {
             if self.press_deadline[i].is_some_and(|d| d <= now) {
                 self.press_deadline[i] = None;
@@ -958,6 +1009,33 @@ mod tests {
         assert!(r[0][2..].iter().all(|&b| b == 0), "knobs off");
         assert_eq!(&r[2][2 + 7..2 + 7 + 4], &[1, 0xff, 0xff, 0xff], "slider 2 white");
         assert_eq!(r[3][2], 0, "logo off");
+    }
+
+    #[test]
+    fn debounce_turns_chatter_into_one_press() {
+        let t0 = Instant::now();
+        let ms = |n| t0 + Duration::from_millis(n);
+        let w = Duration::from_millis(50);
+        let mut d = Debounce::default();
+        // Press with chatter: down, up, down within 5 ms -> exactly one "down".
+        assert_eq!(d.raw(true, ms(0), w), Some(true));
+        assert_eq!(d.raw(false, ms(2), w), None);
+        assert_eq!(d.raw(true, ms(4), w), None);
+        assert_eq!(d.settle(ms(60), w), None, "settled down: nothing new");
+        // Release with chatter -> exactly one "up".
+        assert_eq!(d.raw(false, ms(150), w), Some(false));
+        assert_eq!(d.raw(true, ms(152), w), None);
+        assert_eq!(d.raw(false, ms(154), w), None);
+        assert_eq!(d.settle(ms(210), w), None);
+        // A very quick tap (released inside the window) still gets its release, late.
+        assert_eq!(d.raw(true, ms(300), w), Some(true));
+        assert_eq!(d.raw(false, ms(320), w), None);
+        assert!(d.pending(w).is_some());
+        assert_eq!(d.settle(ms(351), w), Some(false));
+        // A real double press (two presses 120 ms apart) is still two presses.
+        assert_eq!(d.raw(true, ms(500), w), Some(true));
+        assert_eq!(d.raw(false, ms(560), w), Some(false));
+        assert_eq!(d.raw(true, ms(620), w), Some(true));
     }
 
     #[test]

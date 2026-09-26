@@ -17,6 +17,8 @@ pub struct Config {
     pub double_press_ms: u64,
     /// How long a knob press must be held to count as a hold.
     pub hold_ms: u64,
+    /// Ignore button contact chatter for this long after a press or release.
+    pub button_debounce_ms: u64,
     /// Show the on-screen volume popup.
     pub osd: bool,
     /// "bottom" | "top"
@@ -290,7 +292,7 @@ impl Default for Config {
         let mut profiles = BTreeMap::new();
         profiles.insert("Default".into(), Profile { controls, ..Profile::default() });
         Config {
-            active: "Default".into(), deadband: 1, apply_on_connect: false, double_press_ms: 300, hold_ms: 500,
+            active: "Default".into(), deadband: 1, apply_on_connect: false, double_press_ms: 300, hold_ms: 500, button_debounce_ms: 50,
             osd: true, osd_position: "bottom".into(), pickup: true, obs: Obs::default(), profiles, alerts: vec![],
         }
     }
@@ -312,6 +314,8 @@ impl Config {
         }
         self.double_press_ms = self.double_press_ms.clamp(100, 1000);
         self.hold_ms = self.hold_ms.clamp(250, 3000);
+        // Older configs have no value (0); 50 ms matches the official software.
+        self.button_debounce_ms = if self.button_debounce_ms == 0 { 50 } else { self.button_debounce_ms.clamp(5, 200) };
     }
 
     pub fn profile(&self) -> &Profile {
