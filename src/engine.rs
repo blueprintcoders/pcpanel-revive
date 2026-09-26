@@ -43,6 +43,8 @@ struct Engine {
     engaged: [bool; CONTROLS],
     last_set: [Option<f32>; CONTROLS],
     side: [Option<f32>; CONTROLS],
+    /// Startup sync ("apply positions on connect"): take over even though the volume differs.
+    force_sync: [bool; CONTROLS],
     /// Profile to return to when the auto-switched app loses focus.
     auto_prev: Option<String>,
     cfg_mtime: Option<SystemTime>,
@@ -80,7 +82,7 @@ pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Bo
         cfg, shared, post, audio, obs: Obs::default(),
         sent: [None; CONTROLS], pending: [None; CONTROLS], last_cmd: [None; CONTROLS], muted: [false; CONTROLS],
         press_deadline: [None; KNOBS], hold_deadline: [None; KNOBS], hold_fired: [false; KNOBS], debounce: [Debounce::default(); KNOBS],
-        engaged: [false; CONTROLS], last_set: [None; CONTROLS], side: [None; CONTROLS],
+        engaged: [false; CONTROLS], last_set: [None; CONTROLS], side: [None; CONTROLS], force_sync: [false; CONTROLS],
         auto_prev: None, cfg_mtime: mtime(), lights_before: 0, focus_muted: vec![],
         flashing: HashSet::new(), alerts_on: vec![], preview: None, anim_t0: Instant::now(),
         alert_since: vec![], alert_expired: vec![], levels: [None; CONTROLS], meters: vec![], peaks: [0.0; CONTROLS],
@@ -311,6 +313,9 @@ impl Engine {
                 if initial && !self.cfg.apply_on_connect {
                     self.sent[index] = Some(value);
                     return;
+                }
+                if initial {
+                    self.force_sync[index] = true; // the user asked for positions to win at connect
                 }
                 if let Some(s) = self.sent[index] {
                     let db = self.cfg.deadband;
@@ -629,6 +634,11 @@ impl Engine {
 
     /// Soft takeover: after the volume changed elsewhere, ignore the control until it reaches that volume.
     fn pickup(&mut self, i: usize, target: f32, current: f32) -> bool {
+        if std::mem::take(&mut self.force_sync[i]) {
+            self.engaged[i] = true;
+            self.side[i] = None;
+            return true;
+        }
         if !self.cfg.pickup {
             return true;
         }
