@@ -99,7 +99,7 @@ Type or paste exe names (`spotify`, `discord.exe`; commas work), or click **Pick
 ![Lighting presets](docs/screenshots/lighting.webp)
 
 - **Presets:** 11 ready-made looks. Click one to apply it to the current profile; Undo goes back.
-- **Music visualizer:** everything dances to what your speakers play. On the Pro, the sliders show bass, low mids, high mids and treble; the knobs pulse with the same bands and flash on the beat; the logo follows the overall level. Choose rainbow colors or two colors of your own. It only listens to the speakers' output, and nothing is recorded.
+- **Music visualizer:** on top of your normal lighting, turn it on *while audio is playing* (optionally only for chosen apps, like Spotify) or *all the time*. While it runs, everything dances to what your speakers play: on the Pro, the sliders show bass, low mids, high mids and treble, the knobs pulse with the same bands and flash on the beat, and the logo follows the overall level. When the music stops, your lighting comes back. Choose rainbow colors or two colors of your own. It only listens to the speakers' output, and nothing is recorded.
 - **Per control:** static, gradient, fill with position, **meter** (pulses with the control's audio), or **real volume**.
 - **When muted:** turn a control's LED a color of your choice (e.g. red) while its app or device is muted.
 - **Whole panel:** single color, rainbow, wave or breath, plus the logo and slider labels on the Pro.

@@ -258,7 +258,7 @@ pub struct Light {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(default)]
 pub struct Lighting {
-    /// custom | color | rainbow | wave | breath | visualizer
+    /// custom | color | rainbow | wave | breath
     pub mode: String,
     pub brightness: u8, // 0-100, global
     pub color: String,
@@ -271,7 +271,13 @@ pub struct Lighting {
     pub logo: Logo,
     /// Visualizer colors: "rainbow", or "colors" (`color` when quiet to `color2` when loud).
     pub viz: String,
-    pub color2: String,
+    /// Visualizer "colors": quiet and loud.
+    pub viz_low: String,
+    pub viz_high: String,
+    /// Music visualizer on top of the lighting above: "off", "playing" (while audio plays) or "always".
+    pub viz_when: String,
+    /// "playing": only these apps' audio starts it (empty = any app).
+    pub viz_apps: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -309,7 +315,7 @@ impl Default for Lighting {
         Lighting {
             mode: "custom".into(), brightness: 80, color: "#00aaff".into(), hue: 0, speed: 100,
             anim_brightness: 255, reverse: false, bounce: false, vertical: false, logo: Logo::default(),
-            viz: "rainbow".into(), color2: "#ff2d95".into(),
+            viz: "rainbow".into(), viz_low: "#2040ff".into(), viz_high: "#ff2d95".into(), viz_when: "off".into(), viz_apps: vec![],
         }
     }
 }
@@ -366,6 +372,11 @@ impl Config {
             p.controls.resize_with(CONTROLS, Control::default);
             p.controls.truncate(CONTROLS);
             p.lighting.brightness = p.lighting.brightness.min(100);
+            // The visualizer used to be a lighting mode of its own.
+            if p.lighting.mode == "visualizer" {
+                p.lighting.mode = "custom".into();
+                p.lighting.viz_when = "always".into();
+            }
         }
         self.double_press_ms = self.double_press_ms.clamp(100, 1000);
         self.hold_ms = self.hold_ms.clamp(250, 3000);

@@ -94,6 +94,9 @@ struct Engine {
     viz_frame: viz::Frame,
     viz_buf: Vec<f32>,
     viz_retry: Option<Instant>,
+    /// "While audio is playing": audio was heard recently enough to keep the visualizer on.
+    playing: bool,
+    playing_until: Option<Instant>,
 }
 
 pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Box<dyn Fn(u32)>) {
@@ -105,7 +108,7 @@ pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Bo
     let http = http_worker(shared.clone());
     let mut e = Engine {
         cfg, shared, post, audio, obs: Obs::default(), http, shift: None, pressing: Press::Single, slider_seg: None,
-        sheet_knob: None, sheet_until: None, viz: None, viz_frame: viz::Frame::default(), viz_buf: vec![], viz_retry: None,
+        sheet_knob: None, sheet_until: None, viz: None, viz_frame: viz::Frame::default(), viz_buf: vec![], viz_retry: None, playing: false, playing_until: None,
         sent: [None; CONTROLS], pending: [None; CONTROLS], last_cmd: [None; CONTROLS], muted: [false; CONTROLS],
         press_deadline: [None; KNOBS], hold_deadline: [None; KNOBS], hold_fired: [false; KNOBS], debounce: [Debounce::default(); KNOBS],
         engaged: [false; CONTROLS], last_set: [None; CONTROLS], side: [None; CONTROLS], force_sync: [false; CONTROLS], step_anchor: [None; CONTROLS],
@@ -658,7 +661,37 @@ impl Engine {
     }
 
     fn viz_on(&self) -> bool {
-        self.connected && self.light_test.is_none() && self.cfg.profile().lighting.mode == "visualizer"
+        self.connected && self.light_test.is_none() && self.viz_active()
+    }
+
+    /// Should the visualizer replace this profile's lighting right now?
+    fn viz_active(&self) -> bool {
+        match self.cfg.profile().lighting.viz_when.as_str() {
+            "always" => true,
+            "playing" => self.playing,
+            _ => false,
+        }
+    }
+
+    /// "While audio is playing": is one of the chosen apps (or any app) making sound? Stays on through
+    /// short gaps between songs. Returns true when that changed.
+    fn check_playing(&mut self) -> bool {
+        let l = &self.cfg.profile().lighting;
+        let (when, apps) = (l.viz_when.clone(), l.viz_apps.clone());
+        if when == "playing" {
+            let m = self.matcher(&apps);
+            let any = apps.is_empty();
+            let heard = self.audio.sessions().iter().any(|s| {
+                (if any { !s.exe.is_empty() && s.exe != "system" } else { m(s) })
+                    && !s.muted()
+                    && s.meter.as_ref().is_some_and(|mt| unsafe { mt.GetPeakValue().unwrap_or(0.0) } > 0.003)
+            });
+            if heard {
+                self.playing_until = Some(Instant::now() + Duration::from_secs(3));
+            }
+        }
+        let playing = when == "playing" && self.playing_until.is_some_and(|t| Instant::now() < t);
+        std::mem::replace(&mut self.playing, playing) != playing
     }
 
     /// Music visualizer: read what's playing since the last frame and analyze it.
@@ -744,7 +777,7 @@ impl Engine {
 
     /// Profile with "pulse with audio" and "follow the volume" lights resolved to plain colors.
     fn live_frame(&self, p: &Profile) -> Profile {
-        let viz = p.lighting.mode == "visualizer";
+        let viz = self.viz_active();
         let mut f = if viz {
             let knobs = crate::lock(&self.shared).model.buttons();
             viz::paint(p, &self.viz_frame, self.anim_t0.elapsed().as_secs_f32(), knobs)
@@ -1340,7 +1373,7 @@ impl Engine {
                 _ => {}
             }
         }
-        if self.refresh_mutes() {
+        if self.refresh_mutes() | self.check_playing() {
             self.relight();
         }
         // The visualizer follows the default output device.

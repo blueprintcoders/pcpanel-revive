@@ -87,7 +87,7 @@ pub fn paint(p: &Profile, f: &Frame, t: f32, knobs: usize) -> Profile {
     let rainbow = l.viz != "colors";
     // Band hues run red (bass) to violet (treble), slowly turning.
     let hue = |band: f32| band * 75.0 + t * 12.0;
-    let color_of = |band: usize, v: f32| if rainbow { hsv_hex(hue(band as f32), 1.0, 1.0) } else { mix_hex(&l.color, &l.color2, v) };
+    let color_of = |band: usize, v: f32| if rainbow { hsv_hex(hue(band as f32), 1.0, 1.0) } else { mix_hex(&l.viz_low, &l.viz_high, v) };
     let flash = |c: String| mix_hex(&c, "#ffffff", f.glow * 0.6);
     let solid = |c: String| Light { mode: "static".into(), color: c.clone(), color2: c, mute_color: String::new() };
     // Pro knobs: bass, low mids, everything, high mids, treble. Mini: the four bands.
@@ -95,18 +95,18 @@ pub fn paint(p: &Profile, f: &Frame, t: f32, knobs: usize) -> Profile {
     for (i, band) in knob_bands.iter().enumerate() {
         let (v, c) = match band {
             Some(b) => (f.bands[*b], color_of(*b, f.bands[*b])),
-            None => (f.level, if rainbow { hsv_hex(hue(1.5) + 180.0, 1.0, 1.0) } else { mix_hex(&l.color, &l.color2, f.level) }),
+            None => (f.level, if rainbow { hsv_hex(hue(1.5) + 180.0, 1.0, 1.0) } else { mix_hex(&l.viz_low, &l.viz_high, f.level) }),
         };
         out.controls[i].light = solid(flash(scale_hex(&c, 0.06 + 0.94 * v)));
     }
     for k in 0..CONTROLS - KNOBS {
         let v = f.bands[k];
-        let (c1, c2) = if rainbow { (color_of(k, v), hsv_hex(hue(k as f32) + 40.0, 1.0, 1.0)) } else { (l.color.clone(), l.color2.clone()) };
+        let (c1, c2) = if rainbow { (color_of(k, v), hsv_hex(hue(k as f32) + 40.0, 1.0, 1.0)) } else { (l.viz_low.clone(), l.viz_high.clone()) };
         let meter = Light { mode: "meter".into(), color: c1.clone(), color2: c2, mute_color: String::new() };
         out.controls[KNOBS + k].light = live_light(&meter, v, true);
         out.controls[KNOBS + k].label_color = scale_hex(&c1, 0.15 + 0.85 * v);
     }
-    let logo = if rainbow { hsv_hex(t * 30.0, 1.0, 1.0) } else { l.color2.clone() };
+    let logo = if rainbow { hsv_hex(t * 30.0, 1.0, 1.0) } else { l.viz_high.clone() };
     out.lighting.logo = Logo { mode: "static".into(), color: flash(scale_hex(&logo, 0.1 + 0.9 * f.level)), ..Logo::default() };
     out.lighting.mode = "custom".into();
     out
@@ -161,7 +161,7 @@ mod tests {
         let mut cfg = crate::config::Config::default();
         cfg.normalize();
         let mut p = cfg.profile().clone();
-        p.lighting.mode = "visualizer".into();
+        p.lighting.viz_when = "always".into();
         let f = Frame { bands: [1.0, 0.0, 0.5, 0.2], level: 0.7, glow: 0.0 };
         let out = paint(&p, &f, 0.0, KNOBS);
         assert_eq!(out.lighting.mode, "custom");

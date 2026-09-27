@@ -185,7 +185,6 @@ textarea{flex:1;min-width:220px;font:12px Consolas,monospace;color:var(--text);b
 .pv-wave{height:64px;border-radius:8px;background:linear-gradient(90deg,#ff3b30,#ffcc00,#34c759,#00c7be,#007aff,#af52de,#ff3b30);background-size:200% 100%;animation:pvwave 4s linear infinite}
 @keyframes pvwave{to{background-position:200% 0}}
 .pv-wave.pv-viz{animation:pvwave 1.5s linear infinite,vizpulse .45s ease-in-out infinite alternate}
-#device svg.anim-visualizer .led{animation:vizpulse .45s ease-in-out infinite alternate;animation-delay:calc(var(--i) * -.17s)}
 @keyframes vizpulse{from{opacity:.35}to{opacity:1}}
 #selftest,#setup{width:min(620px,94vw)}
 .setup-rows{display:grid;grid-template-columns:auto auto 1fr;gap:6px 14px;margin:12px 0 16px;font-size:13px}
@@ -959,8 +958,10 @@ const PRESETS = [
     logo: {mode: 'rainbow', speed: 100, brightness: 255}},
   {name: 'Rainbow Wave', desc: 'A rainbow that rolls across the whole panel', brightness: 90, mode: 'wave',
     wave: {hue: 0, speed: 140, anim_brightness: 255, reverse: false, bounce: false}},
-  {name: 'Party', desc: 'Every light dances to whatever is playing, and flashes on the beat', brightness: 100, mode: 'visualizer',
-    wave: {viz: 'rainbow'}},
+  {name: 'Party', desc: 'Spectrum colors, and every light dances to the music whenever something plays', brightness: 100, labels: 'match', viz: true,
+    knobs: [['static', '#ff3b30'], ['static', '#ff9500'], ['static', '#ffcc00'], ['static', '#34c759'], ['static', '#00c7be']],
+    sliders: [['volume', '#007aff', '#007aff'], ['volume', '#5856d6', '#5856d6'], ['volume', '#af52de', '#af52de'], ['volume', '#ff2d55', '#ff2d55']],
+    logo: {mode: 'rainbow', speed: 100, brightness: 255}},
 ];
 function applyPreset(pr) {
   const p = prof(), l = p.lighting;
@@ -978,12 +979,13 @@ function applyPreset(pr) {
     });
     l.logo = {...l.logo, ...pr.logo};
   }
+  if (pr.viz) Object.assign(l, {viz_when: 'playing', viz: 'rainbow'});
   touch(); render();
   $('#status').textContent = `Applied ${pr.name} - Undo goes back`;
 }
 function presetCard(pr) {
-  const swatch = pr.mode
-    ? h('div', {class: 'pv-wave' + (pr.mode === 'visualizer' ? ' pv-viz' : '')})
+  const swatch = pr.mode || pr.viz
+    ? h('div', {class: 'pv-wave' + (pr.viz ? ' pv-viz' : '')})
     : h('div', {class: 'pv'},
         h('div', {class: 'pv-knobs'}, [pr.knobs.slice(0, 2), pr.knobs.slice(2)].map(r => h('div', {}, r.map(([m, a, b]) =>
           h('i', {style: `background:${m === 'gradient' ? `linear-gradient(135deg,${a},${b})` : a}`}))))),
@@ -1004,19 +1006,22 @@ function lightingTab() {
         h('div', {class: 'hint'}, 'Click one to apply it to this profile. Mute colors are kept, and Undo takes it back.'),
         h('div', {class: 'presets'}, PRESETS.map(presetCard))),
       h('div', {class: 'panel'}, h('h2', {}, 'Lighting (this profile)'),
-      row('Mode', select(l, 'mode', {custom: 'Per control (set on each card)', color: 'Single color', rainbow: 'Rainbow', wave: 'Wave', breath: 'Breath',
-        visualizer: 'Music visualizer'}, draw)),
-      l.mode === 'visualizer' ? [row('Colors', select(l, 'viz', {rainbow: 'Rainbow', colors: 'Two colors, quiet to loud'}, draw),
-          l.viz === 'colors' ? [color(l, 'color'), 'to', color(l, 'color2')] : null),
-        h('div', {class: 'hint indent'}, isPro()
-          ? 'Everything dances to what your speakers are playing. The sliders show bass, low mids, high mids and treble, left to right; the knobs pulse with the same bands and flash on the beat, and the logo follows the overall level.'
-          : 'Everything dances to what your speakers are playing: the knobs show bass, low mids, high mids and treble, and flash on the beat.'),
-        h('div', {class: 'hint indent'}, 'It listens to your speakers\' output only. Nothing is recorded or saved.')] : null,
+      row('Mode', select(l, 'mode', {custom: 'Per control (set on each card)', color: 'Single color', rainbow: 'Rainbow', wave: 'Wave', breath: 'Breath'}, draw)),
       row('Brightness', num(l, 'brightness', 0, 100), h('span', {class: 'hint'}, '0-100, applies to everything')),
       l.mode === 'color' ? row('Color', color(l, 'color')) : null,
       anim ? [row(l.mode === 'rainbow' ? 'Phase' : 'Hue', num(l, 'hue', 0, 255)), row('Speed', num(l, 'speed', 0, 255)), row('Intensity', num(l, 'anim_brightness', 0, 255))] : null,
       l.mode === 'rainbow' ? row('', check(l, 'reverse', 'reverse'), check(l, 'vertical', 'vertical')) : null,
       l.mode === 'wave' ? row('', check(l, 'reverse', 'reverse'), check(l, 'bounce', 'bounce')) : null),
+      h('div', {class: 'panel'}, h('h2', {}, 'Music visualizer'),
+        h('div', {class: 'hint'}, isPro()
+          ? 'Takes over the lights while it runs: the sliders show bass, low mids, high mids and treble, left to right; the knobs pulse with the same bands and flash on the beat, and the logo follows the overall level. Your lighting above comes back when it stops.'
+          : 'Takes over the lights while it runs: the knobs show bass, low mids, high mids and treble, and flash on the beat. Your lighting above comes back when it stops.'),
+        row('Show it', select(l, 'viz_when', {off: 'Off', playing: 'While audio is playing', always: 'All the time'}, draw)),
+        l.viz_when === 'playing' ? [row('Only for', appChips(l, 'viz_apps')),
+          h('div', {class: 'hint indent'}, 'Leave empty to start for any app. Add apps (e.g. Spotify) so only their audio starts it, not a video call or game. Windows sounds never count.')] : null,
+        l.viz_when && l.viz_when !== 'off' ? [row('Colors', select(l, 'viz', {rainbow: 'Rainbow', colors: 'Two colors, quiet to loud'}, draw),
+            l.viz === 'colors' ? [color(l, 'viz_low'), 'to', color(l, 'viz_high')] : null),
+          h('div', {class: 'hint indent'}, 'It listens to your speakers\' output only. Nothing is recorded or saved.')] : null),
       l.mode === 'custom' && isPro() ? h('div', {class: 'panel'}, h('h2', {}, 'Logo'),
         row('Mode', select(l.logo, 'mode', {none: 'Off', static: 'Static', rainbow: 'Rainbow', breath: 'Breath'}, draw)),
         l.logo.mode === 'static' ? row('Color', color(l.logo, 'color')) : null,
