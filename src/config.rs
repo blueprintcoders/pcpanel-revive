@@ -148,6 +148,14 @@ pub enum Turn {
         #[serde(default)] down: String,
         #[serde(default = "steps")] steps: u8,
     },
+    /// Dimmer: send the level to a web address as it changes (Home Assistant, Hue, webhooks).
+    /// In the URL and body, {value} is 0-100, {value255} 0-255, {bri} 1-254 (Hue) and {on} true/false.
+    Http {
+        #[serde(default = "post")] method: String,
+        #[serde(default)] url: String,
+        #[serde(default)] headers: String,
+        #[serde(default)] body: String,
+    },
 }
 fn db_min() -> f32 { -60.0 }
 fn steps() -> u8 { 24 }

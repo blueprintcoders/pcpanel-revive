@@ -6,7 +6,7 @@ use crate::hid::{self, Event};
 use crate::osd::{self, Info};
 use crate::{log, obs::Obs, sys, Msg, Shared, WM_OSD, WM_REFRESH};
 use serde_json::json;
-use std::sync::mpsc::{Receiver, RecvTimeoutError};
+use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant, SystemTime};
@@ -76,6 +76,8 @@ struct Engine {
     polls: u64,
     light_test: Option<usize>,
     anim_t0: Instant,
+    /// Dimmer requests, sent in order on their own thread.
+    http: Sender<(usize, [String; 4])>,
 }
 
 pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Box<dyn Fn(u32)>) {
@@ -84,8 +86,9 @@ pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Bo
         Ok(a) => a,
         Err(e) => return log(&shared, format!("audio init failed: {e}")),
     };
+    let http = http_worker(shared.clone());
     let mut e = Engine {
-        cfg, shared, post, audio, obs: Obs::default(),
+        cfg, shared, post, audio, obs: Obs::default(), http,
         sent: [None; CONTROLS], pending: [None; CONTROLS], last_cmd: [None; CONTROLS], muted: [false; CONTROLS],
         press_deadline: [None; KNOBS], hold_deadline: [None; KNOBS], hold_fired: [false; KNOBS], debounce: [Debounce::default(); KNOBS],
         engaged: [false; CONTROLS], last_set: [None; CONTROLS], side: [None; CONTROLS], force_sync: [false; CONTROLS], step_anchor: [None; CONTROLS],
@@ -138,6 +141,38 @@ pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Bo
             next_frame = Instant::now() + FRAME;
         }
     }
+}
+
+/// Sends dimmer requests one at a time; while one is in flight, only the newest per control is kept.
+fn http_worker(shared: Arc<Mutex<Shared>>) -> Sender<(usize, [String; 4])> {
+    let (tx, rx) = channel::<(usize, [String; 4])>();
+    std::thread::spawn(move || {
+        while let Ok(first) = rx.recv() {
+            let mut batch = vec![first];
+            while let Ok(m) = rx.try_recv() {
+                match batch.iter_mut().find(|b| b.0 == m.0) {
+                    Some(b) => *b = m,
+                    None => batch.push(m),
+                }
+            }
+            for (_, [method, url, headers, body]) in batch {
+                if let Err(e) = sys::http(&method, &url, &headers, &body) {
+                    log(&shared, format!("dimmer: {e}"));
+                }
+            }
+        }
+    });
+    tx
+}
+
+/// Dimmer placeholders: {value} 0-100, {value255} 0-255, {bri} 1-254 (Philips Hue), {on} true/false.
+fn fill_level(template: &str, v: f32) -> String {
+    let v = v.clamp(0.0, 1.0);
+    template
+        .replace("{value255}", &((v * 255.0).round() as u32).to_string())
+        .replace("{value}", &((v * 100.0).round() as u32).to_string())
+        .replace("{bri}", &((v * 253.0).round() as u32 + 1).to_string())
+        .replace("{on}", if v > 0.0 { "true" } else { "false" })
 }
 
 /// The profile as it should look at time `t` with the active alerts drawn on top.
@@ -620,7 +655,7 @@ impl Engine {
     fn apply_turns(&mut self) {
         for i in 0..CONTROLS {
             let Some(v) = self.pending[i] else { continue };
-            if matches!(self.cfg.profile().controls[i].turn, Turn::Command { .. }) {
+            if matches!(self.cfg.profile().controls[i].turn, Turn::Command { .. } | Turn::Http { .. }) {
                 if self.last_cmd[i].is_some_and(|t| t.elapsed() < CMD_INTERVAL) {
                     continue; // retried on the next wake
                 }
@@ -687,6 +722,10 @@ impl Engine {
                 self.osd(Info { title: label.unwrap_or(param), icon: osd::Icon::Speaker, level: Some(v), ..Default::default() });
             }
             Turn::Command { cmd } => sys::run(&cmd.replace("{value}", &format!("{}", (v * 100.0).round() as i32)))?,
+            Turn::Http { method, url, headers, body } => {
+                let _ = self.http.send((i, [method, fill_level(&url, v), headers, fill_level(&body, v)]));
+                self.osd(Info { title: label.unwrap_or("Lights".into()), icon: osd::Icon::Light, level: Some(v), ..Default::default() });
+            }
             Turn::Keys { up, down, steps } => {
                 let (mut n, anchor) = key_steps(self.step_anchor[i].unwrap_or(raw as f32), raw, steps);
                 self.step_anchor[i] = Some(anchor);
@@ -1068,6 +1107,13 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dimmer_placeholders() {
+        assert_eq!(fill_level(r#"{"brightness_pct": {value}, "b": {value255}}"#, 0.5), r#"{"brightness_pct": 50, "b": 128}"#);
+        assert_eq!(fill_level(r#"{"on": {on}, "bri": {bri}}"#, 1.0), r#"{"on": true, "bri": 254}"#);
+        assert_eq!(fill_level(r#"{"on": {on}, "bri": {bri}}"#, 0.0), r#"{"on": false, "bri": 1}"#);
+    }
 
     #[test]
     fn key_steps_count_whole_steps_only() {

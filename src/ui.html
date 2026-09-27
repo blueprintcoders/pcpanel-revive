@@ -228,11 +228,19 @@ const $ = s => document.querySelector(s);
 const KNOBS = 5;
 const TURN = {none:[], app:[['apps','apps']], device:[['device','text','devices']], obs:[['source','text']],
   voicemeeter:[['param','text',null,'Strip[0].Gain'],['min_db','num'],['max_db','num']], command:[['cmd','text',null,'uses {value} 0-100']], brightness:[],
-  keys:[['up','text','keys','scroll_down'],['down','text','keys','scroll_up'],['steps','num']]};
+  keys:[['up','text','keys','scroll_down'],['down','text','keys','scroll_up'],['steps','num']],
+  http:[['method','text','methods'],['url','text',null,'http://homeassistant.local:8123/api/services/light/turn_on'],
+    ['headers','area',null,'Authorization: Bearer ...\nContent-Type: application/json'],['body','area',null,'{"entity_id": "light.desk", "brightness_pct": {value}}']]};
 const TURN_LABEL = {none:'Nothing', app:'App volume', device:'Device volume', obs:'OBS source volume', voicemeeter:'Voicemeeter parameter', command:'Run command', brightness:'LED brightness',
-  keys:'Keystrokes as you turn (scroll, zoom, brush size...)'};
-const TURN_DEFAULTS = {keys: {up: 'scroll_down', down: 'scroll_up', steps: 24}};
-const TURN_HINT = {keys: 'Each step sends one keystroke to the app in front: scroll a page, zoom (Ctrl + wheel), change brush size in Photoshop with ] and [, or step through a video timeline with the arrow keys. Steps = how many keystrokes the full travel sends.'};
+  keys:'Keystrokes as you turn (scroll, zoom, brush size...)', http:'Smart light dimmer / web request'};
+const TURN_DEFAULTS = {keys: {up: 'scroll_down', down: 'scroll_up', steps: 24}, http: {method: 'POST'}};
+// One-click starting points for the dimmer; the user fills in their own address, token and light.
+const DIMMER_TEMPLATES = {
+  'Home Assistant': {method: 'POST', url: 'http://homeassistant.local:8123/api/services/light/turn_on',
+    headers: 'Authorization: Bearer YOUR_LONG_LIVED_TOKEN\nContent-Type: application/json', body: '{"entity_id": "light.YOUR_LIGHT", "brightness_pct": {value}}'},
+  'Philips Hue': {method: 'PUT', url: 'http://YOUR_BRIDGE_IP/api/YOUR_HUE_USERNAME/lights/1/state', headers: '', body: '{"on": {on}, "bri": {bri}}'},
+};
+const TURN_HINT = {http: 'Sends the level every time you turn it. In the URL and body, {value} becomes 0-100, {value255} 0-255, {bri} 1-254 (Hue) and {on} true or false. In Home Assistant, make a long-lived access token under your profile > Security.', keys: 'Each step sends one keystroke to the app in front: scroll a page, zoom (Ctrl + wheel), change brush size in Photoshop with ] and [, or step through a video timeline with the arrow keys. Steps = how many keystrokes the full travel sends.'};
 const ACT = {mute_turn:[], mute_app:[['apps','apps']], mute_device:[['device','text','devices']], set_default:[['device','text','devices']],
   cycle_default:[['devices','list','devices']], keys:[['keys','text','keys','ctrl+shift+m']], run:[['cmd','text',null,'notepad.exe']], kill:[['process','app']],
   profile:[['name','text','profiles']], next_profile:[], obs_scene:[['scene','text']], obs_mute:[['source','text']], obs_record:[], obs_stream:[],
@@ -660,6 +668,7 @@ function target(c) {
   if (t.type === 'voicemeeter') return {name: t.param || 'Voicemeeter', glyph: 'dot'};
   if (t.type === 'command') return {name: 'Command', glyph: 'dot'};
   if (t.type === 'brightness') return {name: 'Brightness', glyph: 'sun'};
+  if (t.type === 'http') return {name: 'Smart light', glyph: 'sun'};
   if (t.type === 'keys') return {name: /scroll/.test(t.up || '') ? (/ctrl/.test(t.up) ? 'Zoom' : 'Scroll') : `Keys ${t.down || '?'} ${t.up || '?'}`, glyph: 'dot'};
   if (t.type === 'app' && t.apps && SPECIAL[t.apps[0]]) return {name: SPECIAL[t.apps[0]][0], glyph: 'star'};
   const a = c.press && c.press[0];
@@ -860,6 +869,8 @@ function drawEditor() {
     h('div', {id: 'ed-status', class: 'ed-status'}),
     section(slider ? 'When moved' : 'When turned',
       row('Controls', select(c.turn, 'type', TURN_LABEL, () => { c.turn = {type: c.turn.type, ...(TURN_DEFAULTS[c.turn.type] || {})}; redraw(); })),
+      c.turn.type === 'http' ? row('Start from', Object.entries(DIMMER_TEMPLATES).map(([n, tpl]) =>
+        h('button', {class: 'small', onclick: () => { Object.assign(c.turn, tpl); touch(); redraw(); }}, n))) : null,
       fields(c.turn, TURN[c.turn.type] || []),
       TURN_HINT[c.turn.type] ? h('div', {class: 'hint indent'}, TURN_HINT[c.turn.type]) : null),
     slider ? null : section('When pressed', actionRows(c, 'press', redraw, i)),
