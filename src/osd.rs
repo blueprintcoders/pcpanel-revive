@@ -1,4 +1,5 @@
-//! On-screen volume popup: a click-through layered window drawn with GDI on the tray thread.
+//! On-screen popups, drawn with GDI on the tray thread as click-through layered windows:
+//! the volume popup, and the cheat sheet that lists what every control does.
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -30,6 +31,12 @@ pub struct Info {
     pub muted: bool,
     pub hint: String,
     pub top: bool,
+    /// Cheat sheet rows: (tag, what turning does, what pressing does). Shown instead of the volume popup.
+    pub sheet: Vec<[String; 3]>,
+    /// How long to show it (0 = the usual moment).
+    pub stay_ms: u64,
+    /// Fade out the cheat sheet now.
+    pub hide: bool,
 }
 
 const TIMER: usize = 1;
@@ -48,7 +55,8 @@ struct State {
 }
 
 thread_local! {
-    static STATE: RefCell<Option<State>> = const { RefCell::new(None) };
+    /// [volume popup, cheat sheet]: separate windows, so a volume change doesn't cover the sheet.
+    static STATE: RefCell<Vec<State>> = const { RefCell::new(Vec::new()) };
 }
 
 pub fn init() {
@@ -57,18 +65,20 @@ pub fn init() {
         let class = WNDCLASSW { lpfnWndProc: Some(proc), hInstance: hinst.into(), lpszClassName: w!("PCPanelReviveOSD"), ..Default::default() };
         RegisterClassW(&class);
         let ex = WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
-        let Ok(hwnd) = CreateWindowExW(ex, w!("PCPanelReviveOSD"), w!(""), WS_POPUP, 0, 0, 0, 0, None, None, Some(hinst.into()), None) else { return };
-        STATE.with(|s| *s.borrow_mut() = Some(State {
-            hwnd, dc: HDC::default(), bmp: HBITMAP::default(), size: SIZE::default(), pos: POINT::default(), alpha: 0,
-            until: Instant::now(), names: HashMap::new(), icons: HashMap::new(),
-        }));
+        for _ in 0..2 {
+            let Ok(hwnd) = CreateWindowExW(ex, w!("PCPanelReviveOSD"), w!(""), WS_POPUP, 0, 0, 0, 0, None, None, Some(hinst.into()), None) else { return };
+            STATE.with(|s| s.borrow_mut().push(State {
+                hwnd, dc: HDC::default(), bmp: HBITMAP::default(), size: SIZE::default(), pos: POINT::default(), alpha: 0,
+                until: Instant::now(), names: HashMap::new(), icons: HashMap::new(),
+            }));
+        }
     }
 }
 
 unsafe extern "system" fn proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     if msg == WM_TIMER {
         STATE.with(|s| {
-            if let Some(st) = s.borrow_mut().as_mut() {
+            if let Some(st) = s.borrow_mut().iter_mut().find(|st| st.hwnd == hwnd) {
                 // Fade in fast, hold, fade out.
                 let target = if Instant::now() < st.until { 255 } else { 0 };
                 st.alpha = if target > st.alpha { st.alpha.saturating_add(85) } else { st.alpha.saturating_sub(20) };
@@ -101,9 +111,16 @@ fn rgb(r: u8, g: u8, b: u8) -> COLORREF {
 pub fn show(info: &Info) {
     STATE.with(|s| {
         let mut s = s.borrow_mut();
-        let Some(st) = s.as_mut() else { return };
-        unsafe { render(st, info) };
-        st.until = Instant::now() + SHOW_FOR;
+        let sheet = !info.sheet.is_empty() || info.hide;
+        let Some(st) = s.get_mut(sheet as usize) else { return };
+        if info.hide {
+            st.until = Instant::now(); // the timer fades it out
+            return;
+        }
+        unsafe {
+            if sheet { render_sheet(st, info) } else { render(st, info) }
+        }
+        st.until = Instant::now() + if info.stay_ms > 0 { Duration::from_millis(info.stay_ms) } else { SHOW_FOR };
         unsafe {
             present(st);
             let _ = ShowWindow(st.hwnd, SW_SHOWNOACTIVATE);
@@ -134,26 +151,7 @@ unsafe fn render(st: &mut State, info: &Info) {
         });
     }
 
-    // Fresh 32-bit top-down canvas.
-    if !st.dc.is_invalid() {
-        let _ = DeleteDC(st.dc);
-        let _ = DeleteObject(st.bmp.into());
-    }
-    let screen = GetDC(None);
-    st.dc = CreateCompatibleDC(Some(screen));
-    let mut bi = BITMAPINFO::default();
-    bi.bmiHeader = BITMAPINFOHEADER { biSize: size_of::<BITMAPINFOHEADER>() as u32, biWidth: w, biHeight: -h, biPlanes: 1, biBitCount: 32, ..Default::default() };
-    let mut bits = std::ptr::null_mut();
-    st.bmp = CreateDIBSection(Some(screen), &bi, DIB_RGB_COLORS, &mut bits, None, 0).unwrap_or_default();
-    ReleaseDC(None, screen);
-    SelectObject(st.dc, st.bmp.into());
-    st.size = SIZE { cx: w, cy: h };
-
-    let bg = rgb(30, 30, 36);
-    let brush = CreateSolidBrush(bg);
-    FillRect(st.dc, &RECT { left: 0, top: 0, right: w, bottom: h }, brush);
-    let _ = DeleteObject(brush.into());
-    SetBkMode(st.dc, TRANSPARENT);
+    let bits = canvas(st, w, h);
 
     // Icon (app icon, or a Segoe MDL2 glyph).
     let (ix, iy, isz) = (px(18.0), px(19.0), px(40.0));
@@ -235,10 +233,48 @@ unsafe fn render(st: &mut State, info: &Info) {
         let _ = DeleteObject(fill.into());
     }
 
-    // GDI leaves alpha at 0: make the card opaque with anti-aliased rounded corners and a hairline border.
+    card_edges(bits, w, h, px(14.0) as f32);
+
+    // Center on the primary work area, above the taskbar or below the top edge.
+    let work = work_area();
+    let x = work.left + (work.right - work.left - w) / 2;
+    let y = if info.top { work.top + px(28.0) } else { work.bottom - h - px(48.0) };
+    st.pos = POINT { x, y };
+}
+
+fn work_area() -> RECT {
+    let mut work = RECT::default();
+    unsafe { let _ = SystemParametersInfoW(SPI_GETWORKAREA, 0, Some(&mut work as *mut _ as _), SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0)); }
+    work
+}
+
+/// A fresh 32-bit top-down canvas of w x h, filled with the card color. Returns its pixels.
+unsafe fn canvas(st: &mut State, w: i32, h: i32) -> *mut std::ffi::c_void {
+    if !st.dc.is_invalid() {
+        let _ = DeleteDC(st.dc);
+        let _ = DeleteObject(st.bmp.into());
+    }
+    let screen = GetDC(None);
+    st.dc = CreateCompatibleDC(Some(screen));
+    let mut bi = BITMAPINFO::default();
+    bi.bmiHeader = BITMAPINFOHEADER { biSize: size_of::<BITMAPINFOHEADER>() as u32, biWidth: w, biHeight: -h, biPlanes: 1, biBitCount: 32, ..Default::default() };
+    let mut bits = std::ptr::null_mut();
+    st.bmp = CreateDIBSection(Some(screen), &bi, DIB_RGB_COLORS, &mut bits, None, 0).unwrap_or_default();
+    ReleaseDC(None, screen);
+    SelectObject(st.dc, st.bmp.into());
+    st.size = SIZE { cx: w, cy: h };
+    let brush = CreateSolidBrush(rgb(30, 30, 36));
+    FillRect(st.dc, &RECT { left: 0, top: 0, right: w, bottom: h }, brush);
+    let _ = DeleteObject(brush.into());
+    SetBkMode(st.dc, TRANSPARENT);
+    bits
+}
+
+/// GDI leaves alpha at 0: make the card opaque with anti-aliased rounded corners and a hairline border.
+unsafe fn card_edges(bits: *mut std::ffi::c_void, w: i32, h: i32, r: f32) {
     let _ = GdiFlush();
     let pixels = std::slice::from_raw_parts_mut(bits as *mut [u8; 4], (w * h) as usize);
-    let (r, border) = (px(14.0) as f32, rgb(56, 56, 66).0);
+    let border = rgb(56, 56, 66).0;
     let [br, bgc, bb] = [(border & 0xff) as f32, ((border >> 8) & 0xff) as f32, ((border >> 16) & 0xff) as f32];
     for y in 0..h {
         for x in 0..w {
@@ -262,11 +298,50 @@ unsafe fn render(st: &mut State, info: &Info) {
             p[3] = (a * 255.0) as u8;
         }
     }
+}
 
-    // Center on the primary work area, above the taskbar or below the top edge.
-    let mut work = RECT::default();
-    let _ = SystemParametersInfoW(SPI_GETWORKAREA, 0, Some(&mut work as *mut _ as _), SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0));
-    let x = work.left + (work.right - work.left - w) / 2;
-    let y = if info.top { work.top + px(28.0) } else { work.bottom - h - px(48.0) };
-    st.pos = POINT { x, y };
+/// One line of text in a box, with "..." when it doesn't fit.
+unsafe fn text(dc: HDC, s: &str, r: RECT, color: COLORREF, font: HFONT, flags: DRAW_TEXT_FORMAT) {
+    if s.is_empty() {
+        return; // DrawTextW with an empty buffer and an ellipsis flag crashes
+    }
+    SelectObject(dc, font.into());
+    SetTextColor(dc, color);
+    let mut r = r;
+    let mut t: Vec<u16> = s.encode_utf16().collect();
+    DrawTextW(dc, &mut t, &mut r, flags | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+}
+
+/// The cheat sheet: the profile's name, then one row per control, centered on screen.
+unsafe fn render_sheet(st: &mut State, info: &Info) {
+    let k = GetDpiForSystem() as f32 / 96.0;
+    let px = |v: f32| (v * k).round() as i32;
+    let (row_h, head) = (px(30.0), px(52.0));
+    let (w, h) = (px(680.0), head + row_h * info.sheet.len() as i32 + px(14.0));
+    let bits = canvas(st, w, h);
+    let font = |size: f32, weight: i32| CreateFontW(px(size), 0, 0, 0, weight, 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, 0, w!("Segoe UI"));
+    let (title, bold, normal) = (font(19.0, 600), font(14.0, 700), font(14.0, 400));
+    let old = SelectObject(st.dc, title.into());
+    let (x0, right) = (px(20.0), w - px(20.0));
+    text(st.dc, &info.title, RECT { left: x0, top: px(12.0), right: right - px(200.0), bottom: px(40.0) }, rgb(240, 240, 245), title, DT_LEFT);
+    text(st.dc, &info.hint, RECT { left: right - px(200.0), top: px(12.0), right, bottom: px(40.0) }, rgb(140, 140, 152), normal, DT_RIGHT);
+    let line = CreateSolidBrush(rgb(48, 48, 58));
+    for (n, [tag, turn, press]) in info.sheet.iter().enumerate() {
+        let top = head + row_h * n as i32;
+        FillRect(st.dc, &RECT { left: x0, top, right, bottom: top + 1 }, line);
+        let cell = |l: f32, r: i32| RECT { left: x0 + px(l), top, right: r, bottom: top + row_h };
+        text(st.dc, tag, cell(0.0, x0 + px(36.0)), rgb(79, 157, 255), bold, DT_LEFT);
+        let unset = turn.is_empty() && press.is_empty();
+        let (what, color) = if unset { ("Not used", rgb(110, 110, 120)) } else { (turn.as_str(), rgb(232, 232, 238)) };
+        text(st.dc, what, cell(42.0, x0 + px(270.0)), color, normal, DT_LEFT);
+        text(st.dc, press, cell(282.0, right), rgb(170, 170, 182), normal, DT_LEFT);
+    }
+    SelectObject(st.dc, old);
+    for f in [title, bold, normal] {
+        let _ = DeleteObject(f.into());
+    }
+    let _ = DeleteObject(line.into());
+    card_edges(bits, w, h, px(14.0) as f32);
+    let work = work_area();
+    st.pos = POINT { x: work.left + (work.right - work.left - w) / 2, y: work.top + (work.bottom - work.top - h) / 2 };
 }

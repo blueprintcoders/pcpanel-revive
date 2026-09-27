@@ -84,6 +84,9 @@ struct Engine {
     pressing: Press,
     /// Profile slider: the range it's in.
     slider_seg: Option<usize>,
+    /// Cheat sheet: the knob holding it open, or until when a press shows it.
+    sheet_knob: Option<usize>,
+    sheet_until: Option<Instant>,
 }
 
 pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Box<dyn Fn(u32)>) {
@@ -95,6 +98,7 @@ pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Bo
     let http = http_worker(shared.clone());
     let mut e = Engine {
         cfg, shared, post, audio, obs: Obs::default(), http, shift: None, pressing: Press::Single, slider_seg: None,
+        sheet_knob: None, sheet_until: None,
         sent: [None; CONTROLS], pending: [None; CONTROLS], last_cmd: [None; CONTROLS], muted: [false; CONTROLS],
         press_deadline: [None; KNOBS], hold_deadline: [None; KNOBS], hold_fired: [false; KNOBS], debounce: [Debounce::default(); KNOBS],
         engaged: [false; CONTROLS], last_set: [None; CONTROLS], side: [None; CONTROLS], force_sync: [false; CONTROLS], step_anchor: [None; CONTROLS],
@@ -326,6 +330,120 @@ fn norm(app: &str) -> String {
     if a.contains('.') || matches!(a.as_str(), "focused" | "system" | "unmapped" | "") { a } else { a + ".exe" }
 }
 
+/// "spotify.exe" -> "Spotify"; the special targets get their names.
+fn app_name(exe: &str) -> String {
+    match norm(exe).as_str() {
+        "focused" => "App in front".into(),
+        "system" => "System sounds".into(),
+        "unmapped" => "Everything else".into(),
+        e => {
+            let stem = e.trim_end_matches(".exe");
+            stem.chars().next().map_or(String::new(), |c| c.to_uppercase().collect::<String>() + &stem[c.len_utf8()..])
+        }
+    }
+}
+
+fn apps_name(apps: &[String]) -> String {
+    apps.iter().map(|a| app_name(a)).collect::<Vec<_>>().join(", ")
+}
+
+fn device_name(spec: &str) -> String {
+    match spec.trim().to_lowercase().as_str() {
+        "" | "default" => "Speakers".into(),
+        "default_capture" => "Mic".into(),
+        "default_comm" => "Call speakers".into(),
+        "default_comm_capture" => "Call mic".into(),
+        _ => spec.trim().into(),
+    }
+}
+
+/// What turning a control does, in a few words.
+fn turn_text(t: &Turn) -> String {
+    match t {
+        Turn::None => String::new(),
+        Turn::App { apps } => format!("{} volume", apps_name(apps)),
+        Turn::Device { device } => format!("{} volume", device_name(device)),
+        Turn::Obs { source } => format!("OBS: {source}"),
+        Turn::Voicemeeter { param, .. } => format!("Voicemeeter {param}"),
+        Turn::Command { .. } => "Runs a command".into(),
+        Turn::Brightness => "Panel brightness".into(),
+        Turn::Keys { up, .. } if up.contains("scroll") => if up.contains("ctrl") { "Zoom" } else { "Scroll" }.into(),
+        Turn::Keys { up, down, .. } => format!("Keys {down} / {up}"),
+        Turn::Http { .. } => "Smart light".into(),
+    }
+}
+
+fn key_name(keys: &str) -> String {
+    match keys.trim() {
+        "play_pause" => "Play/pause".into(),
+        "next" => "Next track".into(),
+        "prev" => "Previous track".into(),
+        "stop" => "Stop".into(),
+        "mute" => "Mute".into(),
+        "vol_up" => "Volume up".into(),
+        "vol_down" => "Volume down".into(),
+        k => k.into(),
+    }
+}
+
+/// What an action does, in a few words.
+fn action_text(a: &Action) -> String {
+    match a {
+        Action::MuteTurn => "Mute".into(),
+        Action::MuteApp { apps } => format!("Mute {}", apps_name(apps)),
+        Action::MuteDevice { device } => format!("Mute {}", device_name(device)),
+        Action::SetDefault { device } => format!("Use {}", device_name(device)),
+        Action::CycleDefault { .. } => "Next audio device".into(),
+        Action::Keys { keys } => key_name(keys),
+        Action::Run { cmd } => format!("Run {}", cmd.trim_matches('"').rsplit(['\\', '/']).next().unwrap_or("")),
+        Action::Kill { process } => format!("Close {}", app_name(process)),
+        Action::Profile { name } => format!("Profile {name}"),
+        Action::NextProfile => "Next profile".into(),
+        Action::ObsScene { scene } => format!("OBS scene {scene}"),
+        Action::ObsMute { source } => format!("OBS mute {source}"),
+        Action::ObsRecord => "OBS record".into(),
+        Action::ObsStream => "OBS stream".into(),
+        Action::Voicemeeter { .. } => "Voicemeeter".into(),
+        Action::FocusApp { app, .. } => format!("Open {}", app_name(app)),
+        Action::Open { target } => format!("Open {}", target.trim_start_matches("https://").trim_start_matches("http://")),
+        Action::TypeText { .. } => "Type text".into(),
+        Action::MuteMic => "Mute mic".into(),
+        Action::LockPc => "Lock PC".into(),
+        Action::MonitorOff { .. } => "Displays off".into(),
+        Action::LightsToggle => "Lights on/off".into(),
+        Action::SetAppVolume { apps, level } => format!("{} to {level}%", apps_name(apps)),
+        Action::SetDeviceVolume { device, level } => format!("{} to {level}%", device_name(device)),
+        Action::MuteOthers { .. } => "Focus mode".into(),
+        Action::Http { .. } => "Web request".into(),
+        Action::AppOutput { apps, device } => format!("{} to {}", apps_name(apps), device_name(device)),
+        Action::Shift { profile } => format!("Shift to {profile}"),
+        Action::CheatSheet => "This cheat sheet".into(),
+    }
+}
+
+/// Cheat sheet rows for the first `n` controls of the active profile: (tag, turn, buttons).
+fn sheet_rows(cfg: &Config, n: usize) -> Vec<[String; 3]> {
+    let list = |v: &[Action]| v.iter().map(action_text).collect::<Vec<_>>().join(", ");
+    cfg.profile().controls.iter().take(n).enumerate().map(|(i, c)| {
+        let tag = if i < KNOBS { format!("K{}", i + 1) } else { format!("S{}", i - KNOBS + 1) };
+        if cfg.profile_slider.control() == Some(i) {
+            return [tag, format!("Profiles: {}", cfg.profile_slider.profiles.join(", ")), String::new()];
+        }
+        let what = turn_text(&c.turn);
+        let turn = match (c.label.trim(), what.is_empty()) {
+            ("", _) => what,
+            (l, true) => l.to_string(),
+            (l, false) => format!("{l} ({what})"),
+        };
+        let presses = [("Press", &c.press), ("Double", &c.double), ("Hold", &c.hold)].into_iter()
+            .filter(|(_, v)| !v.is_empty())
+            .map(|(k, v)| format!("{k}: {}", list(v)))
+            .collect::<Vec<_>>()
+            .join("    ");
+        [tag, turn, presses]
+    }).collect()
+}
+
 /// Which of `n` equal ranges a slider position is in. Near an edge it stays in the current range,
 /// so a slider resting on the line between two profiles doesn't flip between them.
 fn segment(value: u8, n: usize, current: Option<usize>) -> usize {
@@ -469,6 +587,10 @@ impl Engine {
         crate::lock(&self.shared).buttons[index] = down;
         if self.testing() {
             return;
+        }
+        if !down && self.sheet_knob == Some(index) {
+            self.sheet_knob = None;
+            self.popup(Info { hide: true, ..Default::default() });
         }
         // Leave a shift layer: let go of the held knob, or press a latched one again.
         if let Some((k, prev, momentary)) = self.shift.clone() {
@@ -681,10 +803,13 @@ impl Engine {
     }
 
     fn osd(&self, info: Info) {
-        if !self.cfg.osd {
-            return;
+        if self.cfg.osd {
+            self.popup(Info { top: self.cfg.osd_position == "top", ..info });
         }
-        crate::lock(&self.shared).osd = Some(Info { top: self.cfg.osd_position == "top", ..info });
+    }
+
+    fn popup(&self, info: Info) {
+        crate::lock(&self.shared).osd = Some(info);
         (self.post)(WM_OSD);
     }
 
@@ -1002,6 +1127,21 @@ impl Engine {
                     self.activate(&profile, false);
                 }
             }
+            Action::CheatSheet => {
+                let held = self.pressing == Press::Hold;
+                if !held && self.sheet_until.is_some_and(|t| Instant::now() < t) {
+                    self.sheet_until = None; // pressed again: close it
+                    self.popup(Info { hide: true, ..Default::default() });
+                } else {
+                    self.sheet_knob = held.then_some(i);
+                    let stay = if held { 120_000 } else { 8_000 };
+                    self.sheet_until = (!held).then(|| Instant::now() + Duration::from_millis(stay));
+                    let n = crate::lock(&self.shared).model.analogs();
+                    let hint = if held { "Let go to close" } else { "Press again to close" };
+                    let sheet = sheet_rows(&self.cfg, n);
+                    self.popup(Info { title: self.cfg.active.clone(), hint: hint.into(), sheet, stay_ms: stay, ..Default::default() });
+                }
+            }
             Action::AppOutput { apps, device } => {
                 let m = self.matcher(&apps);
                 let hits: Vec<Session> = self.audio.sessions().into_iter().filter(|s| m(s)).collect();
@@ -1167,6 +1307,22 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cheat_sheet_rows() {
+        let mut cfg = Config::default();
+        cfg.normalize();
+        let rows = sheet_rows(&cfg, 9);
+        assert_eq!(rows.len(), 9);
+        assert_eq!(rows[0], ["K1".to_string(), "Speakers volume".into(), "Press: Mute".into()]);
+        assert_eq!(rows[3][2], "Press: Play/pause    Double: Next track");
+        assert_eq!(rows[7][1], "Spotify volume");
+        let active = cfg.active.clone();
+        cfg.profiles.get_mut(&active).unwrap().controls[5].label = "Browsers".into();
+        assert_eq!(sheet_rows(&cfg, 9)[5][1], "Browsers (Chrome, Firefox, Msedge volume)");
+        assert_eq!(sheet_rows(&cfg, 4).len(), 4, "Mini: four knobs");
+        assert_eq!(action_text(&Action::Run { cmd: r#""C:\Tools\obs64.exe""#.into() }), "Run obs64.exe");
+    }
 
     #[test]
     fn slider_segments_have_sticky_edges() {

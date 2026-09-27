@@ -252,8 +252,9 @@ const ACT = {mute_turn:[], mute_app:[['apps','apps']], mute_device:[['device','t
   mute_others:[['apps','apps']],
   http:[['method','text','methods'],['url','text',null,'http://homeassistant.local:8123/api/services/light/toggle'],
     ['headers','area',null,'Authorization: Bearer ...\nContent-Type: application/json'],['body','area',null,'{"entity_id": "light.desk"}']],
-  app_output:[['apps','apps'],['device','text','devices']], shift:[['profile','text','profiles']]};
-const ACT_HINT = {shift: 'Under Hold: the other profile works only while you hold this knob, like a Shift key. Under a press: it stays until you press this knob again. Set up the other profile\'s knobs and sliders as usual.'};
+  app_output:[['apps','apps'],['device','text','devices']], shift:[['profile','text','profiles']], cheat_sheet:[]};
+const ACT_HINT = {cheat_sheet: 'Shows what every knob and slider does, on screen. Under Hold: while you hold the knob. Under a press: for 8 seconds, or until you press again. After a Shift action, it shows the other profile.',
+  shift: 'Under Hold: the other profile works only while you hold this knob, like a Shift key. Under a press: it stays until you press this knob again. Set up the other profile\'s knobs and sliders as usual.'};
 const ACT_DEFAULTS = {set_app_volume: {level: 20}, set_device_volume: {level: 50}, http: {method: 'POST'}, app_output: {device: 'default'}};
 const ACT_LABEL = {mute_turn:'Mute what this dial controls', mute_app:'Toggle app mute', mute_device:'Toggle device mute', set_default:'Set default device',
   cycle_default:'Cycle default devices', keys:'Keystroke / media key', run:'Run program', kill:'Kill process', profile:'Switch profile', next_profile:'Next profile',
@@ -261,7 +262,7 @@ const ACT_LABEL = {mute_turn:'Mute what this dial controls', mute_app:'Toggle ap
   focus_app:'Focus or open app', open:'Open website, file or folder', type_text:'Type text', mute_mic:'Toggle microphone mute',
   lock_pc:'Lock PC', monitor_off:'Turn displays off/on', lights_toggle:'Turn panel lights on/off',
   set_app_volume:'Set app volume to...', set_device_volume:'Set device volume to...', mute_others:'Focus mode: mute all other apps',
-  http:'Web request (Home Assistant, webhooks...)', app_output:'Send app to audio device', shift:'Shift: use another profile while held'};
+  http:'Web request (Home Assistant, webhooks...)', app_output:'Send app to audio device', shift:'Shift: use another profile while held', cheat_sheet:'Show a cheat sheet of every control'};
 const SPECIAL = {focused: ['Focused window', 'Whatever app is in front'], system: ['System sounds', 'Windows notification sounds'], unmapped: ['Everything else', 'Every app not on another control']};
 
 let cfg = null, dirty = false, tab = 'controls', lastValues = [], lastCfgJson = '', appInfo = {};
@@ -497,7 +498,7 @@ const ACT_GROUP = {mute_turn: 'Audio', mute_app: 'Audio', mute_device: 'Audio', 
   obs_scene: 'OBS', obs_mute: 'OBS', obs_record: 'OBS', obs_stream: 'OBS', voicemeeter: 'Voicemeeter',
   mute_mic: 'Audio', focus_app: 'Keyboard & apps', open: 'Keyboard & apps', type_text: 'Keyboard & apps',
   lock_pc: 'System', monitor_off: 'System', lights_toggle: 'Panel',
-  set_app_volume: 'Audio', set_device_volume: 'Audio', mute_others: 'Audio', app_output: 'Audio', http: 'Web & smart home', shift: 'Profiles'};
+  set_app_volume: 'Audio', set_device_volume: 'Audio', mute_others: 'Audio', app_output: 'Audio', http: 'Web & smart home', shift: 'Profiles', cheat_sheet: 'Panel'};
 
 function text(o, k, list, ph) {
   if (list) return comboFree(() => o[k] ?? '', v => { o[k] = v; touch(); }, listOptions(list), {placeholder: ph, record: list === 'keys'});

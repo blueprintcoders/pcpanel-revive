@@ -236,6 +236,8 @@ pub enum Action {
     AppOutput { #[serde(default)] apps: Vec<String>, #[serde(default)] device: String },
     /// Use another profile while this knob is held (from Hold), or until it's pressed again (from a press).
     Shift { #[serde(default)] profile: String },
+    /// Show what every control does: while held (from Hold), or for a few seconds (from a press).
+    CheatSheet,
 }
 fn half() -> u8 { 50 }
 fn post() -> String { "POST".into() }
