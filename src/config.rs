@@ -29,6 +29,32 @@ pub struct Config {
     pub profiles: BTreeMap<String, Profile>,
     /// Notification lights; shared by every profile.
     pub alerts: Vec<Alert>,
+    /// A slider that picks the profile, in every profile.
+    pub profile_slider: ProfileSlider,
+}
+
+/// Slide to switch profiles: the travel is split evenly between `profiles`, bottom first.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(default)]
+pub struct ProfileSlider {
+    /// 0 = off, 1-4 = S1-S4.
+    pub slider: u8,
+    pub profiles: Vec<String>,
+    /// Its light fills up to the slider's position in this color.
+    pub color: String,
+}
+
+impl Default for ProfileSlider {
+    fn default() -> Self {
+        ProfileSlider { slider: 0, profiles: vec![], color: "#ffffff".into() }
+    }
+}
+
+impl ProfileSlider {
+    /// The slider's control index, when it's in use.
+    pub fn control(&self) -> Option<usize> {
+        ((1..=CONTROLS - KNOBS).contains(&(self.slider as usize)) && !self.profiles.is_empty()).then(|| KNOBS + self.slider as usize - 1)
+    }
 }
 
 /// Light up / pulse some LEDs while an app wants attention.
@@ -208,6 +234,8 @@ pub enum Action {
     },
     /// Route these apps to an output device; "default" hands them back to the Windows default.
     AppOutput { #[serde(default)] apps: Vec<String>, #[serde(default)] device: String },
+    /// Use another profile while this knob is held (from Hold), or until it's pressed again (from a press).
+    Shift { #[serde(default)] profile: String },
 }
 fn half() -> u8 { 50 }
 fn post() -> String { "POST".into() }
@@ -312,6 +340,7 @@ impl Default for Config {
         Config {
             active: "Default".into(), deadband: 1, apply_on_connect: false, double_press_ms: 300, hold_ms: 500, button_debounce_ms: 50,
             osd: true, osd_position: "bottom".into(), pickup: true, obs: Obs::default(), profiles, alerts: vec![],
+            profile_slider: ProfileSlider::default(),
         }
     }
 }
@@ -334,6 +363,10 @@ impl Config {
         self.hold_ms = self.hold_ms.clamp(250, 3000);
         // Older configs have no value (0); 50 ms matches the official software.
         self.button_debounce_ms = if self.button_debounce_ms == 0 { 50 } else { self.button_debounce_ms.clamp(5, 200) };
+        // The panel's slider strips have five segments: up to five profiles, and only ones that exist.
+        let profiles = &self.profiles;
+        self.profile_slider.profiles.retain(|p| profiles.contains_key(p));
+        self.profile_slider.profiles.truncate(5);
     }
 
     pub fn profile(&self) -> &Profile {

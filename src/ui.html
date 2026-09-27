@@ -252,7 +252,8 @@ const ACT = {mute_turn:[], mute_app:[['apps','apps']], mute_device:[['device','t
   mute_others:[['apps','apps']],
   http:[['method','text','methods'],['url','text',null,'http://homeassistant.local:8123/api/services/light/toggle'],
     ['headers','area',null,'Authorization: Bearer ...\nContent-Type: application/json'],['body','area',null,'{"entity_id": "light.desk"}']],
-  app_output:[['apps','apps'],['device','text','devices']]};
+  app_output:[['apps','apps'],['device','text','devices']], shift:[['profile','text','profiles']]};
+const ACT_HINT = {shift: 'Under Hold: the other profile works only while you hold this knob, like a Shift key. Under a press: it stays until you press this knob again. Set up the other profile\'s knobs and sliders as usual.'};
 const ACT_DEFAULTS = {set_app_volume: {level: 20}, set_device_volume: {level: 50}, http: {method: 'POST'}, app_output: {device: 'default'}};
 const ACT_LABEL = {mute_turn:'Mute what this dial controls', mute_app:'Toggle app mute', mute_device:'Toggle device mute', set_default:'Set default device',
   cycle_default:'Cycle default devices', keys:'Keystroke / media key', run:'Run program', kill:'Kill process', profile:'Switch profile', next_profile:'Next profile',
@@ -260,7 +261,7 @@ const ACT_LABEL = {mute_turn:'Mute what this dial controls', mute_app:'Toggle ap
   focus_app:'Focus or open app', open:'Open website, file or folder', type_text:'Type text', mute_mic:'Toggle microphone mute',
   lock_pc:'Lock PC', monitor_off:'Turn displays off/on', lights_toggle:'Turn panel lights on/off',
   set_app_volume:'Set app volume to...', set_device_volume:'Set device volume to...', mute_others:'Focus mode: mute all other apps',
-  http:'Web request (Home Assistant, webhooks...)', app_output:'Send app to audio device'};
+  http:'Web request (Home Assistant, webhooks...)', app_output:'Send app to audio device', shift:'Shift: use another profile while held'};
 const SPECIAL = {focused: ['Focused window', 'Whatever app is in front'], system: ['System sounds', 'Windows notification sounds'], unmapped: ['Everything else', 'Every app not on another control']};
 
 let cfg = null, dirty = false, tab = 'controls', lastValues = [], lastCfgJson = '', appInfo = {};
@@ -496,7 +497,7 @@ const ACT_GROUP = {mute_turn: 'Audio', mute_app: 'Audio', mute_device: 'Audio', 
   obs_scene: 'OBS', obs_mute: 'OBS', obs_record: 'OBS', obs_stream: 'OBS', voicemeeter: 'Voicemeeter',
   mute_mic: 'Audio', focus_app: 'Keyboard & apps', open: 'Keyboard & apps', type_text: 'Keyboard & apps',
   lock_pc: 'System', monitor_off: 'System', lights_toggle: 'Panel',
-  set_app_volume: 'Audio', set_device_volume: 'Audio', mute_others: 'Audio', app_output: 'Audio', http: 'Web & smart home'};
+  set_app_volume: 'Audio', set_device_volume: 'Audio', mute_others: 'Audio', app_output: 'Audio', http: 'Web & smart home', shift: 'Profiles'};
 
 function text(o, k, list, ph) {
   if (list) return comboFree(() => o[k] ?? '', v => { o[k] = v; touch(); }, listOptions(list), {placeholder: ph, record: list === 'keys'});
@@ -639,6 +640,8 @@ const LIGHTS = ['k1', 'k2', 'k3', 'k4', 'k5', 's1', 's2', 's3', 's4', 'logo'];
 // Mini: one row of four, each labeled above like the printed "VOLUME n".
 const MINI_KNOBS = [[82, 132], [194, 132], [306, 132], [418, 132]];
 // The active alert drawn on LED i (0-8 = controls, 9 = logo), if any.
+// The slider that switches profiles (Settings > Profile slider), if any.
+const profileSlider = () => { const ps = cfg.profile_slider || {}; return ps.slider >= 1 && ps.slider <= 4 && (ps.profiles || []).length ? KNOBS + ps.slider - 1 : -1; };
 const alertFor = i => (cfg.alerts || []).find((a, n) => alertsOn[n] && (a.lights || []).includes(LIGHTS[i]));
 const fx = a => a ? {cls: ` fx-${a.effect || 'pulse'}`, style: `--p:${a.period_ms || 1200}ms;`} : {cls: '', style: ''};
 const ctlName = i => i < KNOBS ? 'Knob ' + (i + 1) : 'Slider ' + (i - KNOBS + 1);
@@ -695,6 +698,7 @@ function ledOf(i, v) {
   if (al) return {solid: al.color, alert: al};
   if (l.mode === 'color') return {solid: l.color};
   if (l.mode !== 'custom') return {anim: true};
+  if (i === profileSlider()) return {from: cfg.profile_slider.color, to: cfg.profile_slider.color, fill: v / 255};
   let lt = c.light;
   if (muted[i] && lt.mute_color) lt = {mode: 'static', color: lt.mute_color};
   if (lt.mode === 'static') return {solid: lt.color};
@@ -731,14 +735,14 @@ function deviceSvg() {
     return `M${x0} ${y0}A${r} ${r} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${x1} ${y1}`;
   };
   const caption = (i, x, y, w) => {
-    const t = target(p.controls[i]), icon = t.exe && appLook(t.exe).icon;
+    const t = i === profileSlider() ? {name: 'Profiles', glyph: 'star'} : target(p.controls[i]), icon = t.exe && appLook(t.exe).icon;
     const label = p.controls[i].label || t.name;
     const iw = icon || t.glyph ? 18 : 0, room = w - iw;
     let txt = label;
     while (txt.length > 1 && textWidth(txt) > room) txt = txt.slice(0, -2) + '...';
     const tw = textWidth(txt);
     const x0 = x - (iw + tw) / 2;
-    const unset = (p.controls[i].turn.type === 'none' && !p.controls[i].press.length) || present[i] === false;
+    const unset = i !== profileSlider() && ((p.controls[i].turn.type === 'none' && !p.controls[i].press.length) || present[i] === false);
     return `<g><title>${esc(label)}</title>` + (icon ? `<image href="${icon}" x="${x0}" y="${y - 12}" width="15" height="15" preserveAspectRatio="xMidYMid meet"/>` :
             t.glyph ? `<g transform="translate(${x0} ${y - 11})" class="glyph">${GLYPHS[t.glyph]}</g>` : '') +
       `<text x="${x0 + iw}" y="${y}" class="cap${unset ? ' unset' : ''}">${esc(txt)}</text></g>`;
@@ -837,7 +841,7 @@ function actionRows(c, key, redraw, ctl) {
       h('div', {class: 'act-top'}, select(a, 'type', ACT_LABEL, () => { list[i] = {type: a.type, ...(ACT_DEFAULTS[a.type] || {})}; redraw(); }, ACT_GROUP),
         h('button', {class: 'x try', title: 'Try it now', onclick: e => testAction(ctl, a, e.currentTarget)}, '▶'),
         h('button', {class: 'x', title: 'Remove', onclick: () => { list.splice(i, 1); touch(); redraw(); }}, '×')),
-      fields(a, ACT[a.type] || []))),
+      fields(a, ACT[a.type] || []), ACT_HINT[a.type] ? h('div', {class: 'hint indent'}, ACT_HINT[a.type]) : null)),
     h('button', {class: 'link', onclick: () => { list.push({type: 'mute_turn'}); touch(); redraw(); }}, '+ Add action')];
 }
 function lightRows(c, i, redraw) {
@@ -863,6 +867,12 @@ function drawEditor() {
     ['gradient', 'volume'].includes(c.light.mode) ? h('i', {style: `background:${hex(c.light.color2)}`}) : null,
     c.light.mute_color ? h('i', {class: 'mute', style: `background:${hex(c.light.mute_color)}`, title: 'when muted'}) : null);
   setTimeout(drawStatus);
+  if (i === profileSlider()) {
+    const names = cfg.profile_slider.profiles;
+    return put(box, h('div', {class: 'ed-head'}, h('h2', {}, ctlName(i)), h('span', {class: 'hint'}, 'Profile slider')),
+      h('section', {class: 'sec'}, h('div', {class: 'hint'}, `Slide it to switch profiles, from the bottom: ${names.join(', ')}. It does this in every profile.`),
+        h('div', {class: 'row'}, h('button', {onclick: () => { tab = 'settings'; render(); }}, 'Change in Settings...'))));
+  }
   put(box,
     h('div', {class: 'ed-head'}, h('h2', {}, ctlName(i)),
       h('input', {class: 'ed-label', value: c.label, placeholder: 'Add a label', oninput: e => { c.label = e.target.value; touch(); }})),
@@ -1005,6 +1015,7 @@ function settingsTab() {
   return [h('div', {class: 'panel'}, h('h2', {}, 'Panel'),
       row('', h('button', {class: 'pri', onclick: selfTest}, 'Test my panel...'),
         h('span', {class: 'hint'}, 'Checks every light, knob, slider and button. Takes about a minute.'))),
+    isPro() ? profileSliderPanel() : null,
     h('div', {class: 'panel'}, h('h2', {}, 'This profile'),
       row('Auto apps', appChips(p, 'auto_apps')),
       h('div', {class: 'hint'}, 'Switch to this profile while one of these apps has focus, and back when it loses focus.'),
@@ -1040,6 +1051,18 @@ function settingsTab() {
         'Devices: default, default_capture, default_comm, default_comm_capture, or part of a device name. ',
         'Keys: combos like ctrl+shift+m, or media keys play_pause, next, prev, stop, vol_up, vol_down, mute. ',
         'The config file lives at %APPDATA%\\pcpanel-revive\\config.json and is reloaded automatically when edited.'))];
+}
+function profileSliderPanel() {
+  const ps = cfg.profile_slider = cfg.profile_slider || {slider: 0, profiles: [], color: '#ffffff'};
+  const box = h('div', {class: 'panel'});
+  const draw = () => put(box, h('h2', {}, 'Profile slider'),
+    h('div', {class: 'hint'}, 'Turn one slider into a profile switch: its travel is split evenly between the profiles you list, bottom first. Up to five, one per light segment. It switches profiles in every profile, so it no longer controls a volume.'),
+    row('Slider', combo(() => ps.slider, v => { ps.slider = v; touch(); draw(); },
+      [{value: 0, label: 'Off'}, ...[1, 2, 3, 4].map(n => ({value: n, label: 'Slider ' + n}))])),
+    ps.slider ? [row('Profiles', chips(ps, 'profiles', 'profiles')), h('div', {class: 'hint indent'}, 'Bottom first. Only existing profiles count; extras past five are ignored.'),
+      row('Light', color(ps, 'color'), h('span', {class: 'hint'}, 'fills up to the slider\'s position'))] : null);
+  draw();
+  return box;
 }
 function backupsPanel() {
   const list = h('div', {class: 'backups'}, h('div', {class: 'hint'}, 'Loading...'));
@@ -1395,7 +1418,14 @@ $('#pNew').onclick = () => {
 $('#pRen').onclick = () => {
   const n = prompt('Rename profile to:', cfg.active);
   if (!n || cfg.profiles[n]) return;
-  cfg.profiles[n] = prof(); delete cfg.profiles[cfg.active]; cfg.active = n; touch(); render();
+  const old = cfg.active;
+  cfg.profiles[n] = prof(); delete cfg.profiles[old]; cfg.active = n;
+  // Keep everything that points at the profile by name.
+  const ps = cfg.profile_slider;
+  if (ps) ps.profiles = (ps.profiles || []).map(x => x === old ? n : x);
+  for (const p of Object.values(cfg.profiles)) for (const c of p.controls) for (const a of [...c.press, ...c.double, ...c.hold])
+    if ((a.type === 'profile' && a.name === old) || (a.type === 'shift' && a.profile === old)) a.type === 'profile' ? a.name = n : a.profile = n;
+  touch(); render();
 };
 $('#pDel').onclick = () => {
   if (Object.keys(cfg.profiles).length < 2 || !confirm(`Delete profile "${cfg.active}"?`)) return;

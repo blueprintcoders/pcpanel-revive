@@ -78,6 +78,12 @@ struct Engine {
     anim_t0: Instant,
     /// Dimmer requests, sent in order on their own thread.
     http: Sender<(usize, [String; 4])>,
+    /// Shift layer: (knob, profile to return to, ends on release rather than the next press).
+    shift: Option<(usize, String, bool)>,
+    /// The kind of press whose actions are running.
+    pressing: Press,
+    /// Profile slider: the range it's in.
+    slider_seg: Option<usize>,
 }
 
 pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Box<dyn Fn(u32)>) {
@@ -88,7 +94,7 @@ pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Bo
     };
     let http = http_worker(shared.clone());
     let mut e = Engine {
-        cfg, shared, post, audio, obs: Obs::default(), http,
+        cfg, shared, post, audio, obs: Obs::default(), http, shift: None, pressing: Press::Single, slider_seg: None,
         sent: [None; CONTROLS], pending: [None; CONTROLS], last_cmd: [None; CONTROLS], muted: [false; CONTROLS],
         press_deadline: [None; KNOBS], hold_deadline: [None; KNOBS], hold_fired: [false; KNOBS], debounce: [Debounce::default(); KNOBS],
         engaged: [false; CONTROLS], last_set: [None; CONTROLS], side: [None; CONTROLS], force_sync: [false; CONTROLS], step_anchor: [None; CONTROLS],
@@ -320,6 +326,17 @@ fn norm(app: &str) -> String {
     if a.contains('.') || matches!(a.as_str(), "focused" | "system" | "unmapped" | "") { a } else { a + ".exe" }
 }
 
+/// Which of `n` equal ranges a slider position is in. Near an edge it stays in the current range,
+/// so a slider resting on the line between two profiles doesn't flip between them.
+fn segment(value: u8, n: usize, current: Option<usize>) -> usize {
+    let at = |v: i32| (v.clamp(0, 255) as usize * n / 256).min(n - 1);
+    let v = value as i32;
+    match current {
+        Some(c) if at(v - 6) == c || at(v + 6) == c => c,
+        _ => at(v),
+    }
+}
+
 /// Keystroke turn: whole steps moved since `anchor` (positive = up) and the new anchor.
 /// The anchor jumps a whole step at a time, so jitter around a step never repeats a key.
 fn key_steps(anchor: f32, raw: u8, steps: u8) -> (i32, f32) {
@@ -365,6 +382,12 @@ impl Engine {
                 let keys = matches!(self.cfg.profile().controls[index].turn, Turn::Keys { .. });
                 if !keys || initial || self.testing() || self.step_anchor[index].is_none() {
                     self.step_anchor[index] = Some(value as f32);
+                }
+                if self.cfg.profile_slider.control() == Some(index) {
+                    if !self.testing() {
+                        self.slider_pick(value);
+                    }
+                    return;
                 }
                 if self.testing() {
                     self.sent[index] = Some(value);
@@ -431,6 +454,7 @@ impl Engine {
                 self.relight();
             }
             Msg::Test(i, action) => {
+                self.pressing = Press::Single;
                 if let Err(e) = self.action(i.min(CONTROLS - 1), action) {
                     log(&self.shared, format!("test: {e}"));
                 }
@@ -445,6 +469,15 @@ impl Engine {
         crate::lock(&self.shared).buttons[index] = down;
         if self.testing() {
             return;
+        }
+        // Leave a shift layer: let go of the held knob, or press a latched one again.
+        if let Some((k, prev, momentary)) = self.shift.clone() {
+            if k == index && down != momentary {
+                self.shift = None;
+                self.hold_deadline[index] = None;
+                self.activate(&prev, false);
+                return;
+            }
         }
         let has_hold = !self.cfg.profile().controls[index].hold.is_empty();
         match (down, has_hold) {
@@ -467,6 +500,17 @@ impl Engine {
             self.press(i, Press::Double);
         } else {
             self.press_deadline[i] = Some(Instant::now() + Duration::from_millis(self.cfg.double_press_ms));
+        }
+    }
+
+    /// Profile slider moved: switch to the profile for its range.
+    fn slider_pick(&mut self, value: u8) {
+        let names = self.cfg.profile_slider.profiles.clone();
+        let seg = segment(value, names.len(), self.slider_seg);
+        self.slider_seg = Some(seg);
+        if self.shift.is_none() && names[seg] != self.cfg.active {
+            self.auto_prev = None;
+            self.activate(&names[seg], true);
         }
     }
 
@@ -549,6 +593,12 @@ impl Engine {
                 _ => continue,
             };
             f.controls[i].light = live_light(&p.controls[i].light, v, i >= KNOBS);
+        }
+        // The profile slider looks the same in every profile: filled up to its position.
+        if let Some(i) = self.cfg.profile_slider.control() {
+            let c = self.cfg.profile_slider.color.clone();
+            f.controls[i].light = Light { mode: "volume".into(), color: c.clone(), color2: c.clone(), mute_color: String::new() };
+            f.controls[i].label_color = c;
         }
         f
     }
@@ -822,6 +872,7 @@ impl Engine {
     fn press(&mut self, i: usize, kind: Press) {
         let c = &self.cfg.profile().controls[i];
         let actions = match kind { Press::Single => c.press.clone(), Press::Double => c.double.clone(), Press::Hold => c.hold.clone() };
+        self.pressing = kind;
         for a in actions {
             if let Err(e) = self.action(i, a) {
                 log(&self.shared, format!("{}: {e}", self.name(i)));
@@ -941,6 +992,15 @@ impl Engine {
                         log(&shared, format!("web request: {e}"));
                     }
                 });
+            }
+            Action::Shift { profile } => {
+                if !self.cfg.profiles.contains_key(&profile) {
+                    return Err(format!("shift: there's no profile called '{profile}'"));
+                }
+                if self.shift.is_none() && profile != self.cfg.active {
+                    self.shift = Some((i, self.cfg.active.clone(), self.pressing == Press::Hold));
+                    self.activate(&profile, false);
+                }
             }
             Action::AppOutput { apps, device } => {
                 let m = self.matcher(&apps);
@@ -1107,6 +1167,19 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn slider_segments_have_sticky_edges() {
+        assert_eq!(segment(0, 3, None), 0);
+        assert_eq!(segment(128, 3, None), 1);
+        assert_eq!(segment(255, 3, None), 2);
+        assert_eq!(segment(255, 5, None), 4);
+        // Edge between 0 and 1 of two ranges is 128.
+        assert_eq!(segment(130, 2, Some(0)), 0, "just past the edge: stays");
+        assert_eq!(segment(140, 2, Some(0)), 1);
+        assert_eq!(segment(125, 2, Some(1)), 1);
+        assert_eq!(segment(250, 3, Some(0)), 2, "a jump far away switches at once");
+    }
 
     #[test]
     fn dimmer_placeholders() {
