@@ -209,7 +209,7 @@ fn build_menu(shared: &Mutex<Shared>) -> Menu {
         let _ = menu.append(&MenuItem::with_id("update", format!("Update to version {}", u.version), true, None));
         let _ = menu.append(&PredefinedMenuItem::separator());
     }
-    let _ = menu.append(&MenuItem::with_id("open", "Settings...", true, None));
+    let _ = menu.append(&MenuItem::with_id("open", "Settings", true, None));
     let profiles = Submenu::new("Profile", true);
     for name in s.config.profiles.keys() {
         let _ = profiles.append(&CheckMenuItem::with_id(format!("p:{name}"), name, true, *name == s.config.active, None));

@@ -27,7 +27,7 @@ It lives in your tray as a single ~2 MB exe using about 14 MB of RAM, with no me
 2. **Quit the official PCPanel software** (right-click its tray icon > Exit). Only one app can talk to the panel at a time.
 3. **Run `pcpanel-revive.exe`.** A tray icon appears, and your panel is detected within a couple of seconds.
 4. **Left-click the tray icon** to open the settings. Right-click it for profiles, *Start with Windows* and *Quit*.
-5. **New to PCPanel?** Click **Quick setup** in the banner (or *Settings > Quick setup...*) for a ready-made layout: speakers, mic, the app in front, chat, music, browser and more, based on the apps on your PC. It's added as a new profile.
+5. **New to PCPanel?** Click **Quick setup** in the banner (or *Settings > Quick setup*) for a ready-made layout: speakers, mic, the app in front, chat, music, browser and more, based on the apps on your PC. It's added as a new profile.
 
 > **"Windows protected your PC"?** The exe isn't code-signed yet, so SmartScreen may warn you the first time. Click **More info > Run anyway**.
 
@@ -37,7 +37,7 @@ If you used the official software on this PC, a banner offers to import your pro
 
 ![First run: the import banner](docs/screenshots/first-run.webp)
 
-Moving to a new PC? Copy `%LOCALAPPDATA%\PCPanel Software\save.json` from the old one and use **Settings > Import a save.json file...**.
+Moving to a new PC? Copy `%LOCALAPPDATA%\PCPanel Software\save.json` from the old one and use **Settings > Import a save.json file**.
 
 ---
 
@@ -67,7 +67,7 @@ The live readout ("Now at 55%") shows the real volume. A dimmed caption means th
 
 ### Picking apps
 
-Type or paste exe names (`spotify`, `discord.exe`; commas work), or click **Pick...**:
+Type or paste exe names (`spotify`, `discord.exe`; commas work), or click **Pick**:
 
 ![The app picker](docs/screenshots/app-picker.webp)
 
@@ -76,7 +76,7 @@ Type or paste exe names (`spotify`, `discord.exe`; commas work), or click **Pick
   - *System sounds.*
   - *Everything else:* every app not on another control.
 - **Playing audio** and **Other running apps,** with their real icons and names.
-- **Browse for .exe...:** for apps that aren't running.
+- **Browse for .exe:** for apps that aren't running.
 - **Point at a window:** click it, then click any app's window.
 
 ### Button actions
@@ -89,7 +89,7 @@ Type or paste exe names (`spotify`, `discord.exe`; commas work), or click **Pick
 | Keyboard & apps | Keystroke or media key (or **record** a shortcut) · Run a program · Focus or open an app · Open a website, file or folder · Type text · Kill a process |
 | Profiles | Switch to a profile · Next profile · Shift: use another profile while the knob is held |
 | OBS | Switch scene · Toggle a source's mute · Toggle recording / streaming |
-| Web & smart home | Web request (Home Assistant, webhooks...) with method, URL, headers and body |
+| Web & smart home | Web request (Home Assistant, webhooks) with method, URL, headers and body |
 | System | Lock PC · Turn displays off/on (all, or chosen monitors) |
 | Voicemeeter | Run a Voicemeeter script |
 | Panel | Turn the panel lights on/off · Show a cheat sheet of every control |
@@ -112,7 +112,7 @@ Light up, pulse or blink any knob ring, slider or the logo while an app wants yo
 
 - **When it flashes its taskbar button:** Discord, Teams, Slack, Telegram and most chat apps do this for new messages. For Discord, make sure *Settings > Notifications > Enable Taskbar Flashing* is on.
 - **When it shows a Windows notification:** for apps like Outlook or Teams that pop up a notification instead.
-- **When its window title contains...:** for apps that show an unread count like "(3)", or any text you choose.
+- **When its window title contains some text:** for apps that show an unread count like "(3)", or any text you choose.
 - **When it's using the microphone (on air):** leave the app empty to light up whenever any app is using a mic, e.g. during a call or a stream. **+ On-air light** adds one in a click.
 - **Clearing:** the alert clears when you switch to the app, or after the **Stop after** time.
 - **Preview 5 s:** shows it on your panel.
@@ -130,7 +130,7 @@ If an app's volume was changed somewhere else (like the Windows mixer), turning 
 
 - Create, rename and delete profiles from the header, and switch between them from the tray, the header, or a knob button.
 - **Auto-switch:** a profile can turn on automatically while a chosen app (e.g. a game) is in front.
-- **Share:** *Settings > Export this profile...* saves a `.pcpanel.json` file; *Import a profile file...* adds one.
+- **Share:** *Settings > Export this profile* saves a `.pcpanel.json` file; *Import a profile file* adds one.
 - **Shift layer:** add *Shift: use another profile while held* under a knob's **Hold**. While you hold that knob, every other control does what it does in the other profile; let go and it's back. Under a press instead, it stays until you press that knob again.
 - **Profile slider** (Pro): *Settings > Profile slider* turns one slider into a profile switch. Its travel is split evenly between up to five profiles, bottom first, and its light fills up to where it is.
 - **Cheat sheet:** add *Show a cheat sheet of every control* to a button. Under Hold, an on-screen list of what every knob and slider does appears while you hold it; after a Shift action, it shows the other profile.
@@ -139,7 +139,7 @@ If an app's volume was changed somewhere else (like the Windows mixer), turning 
 
 ![Settings](docs/screenshots/settings.webp)
 
-- **Test my panel...** checks every light, knob, slider and button in about a minute. Your volumes don't change while it runs.
+- **Test my panel** checks every light, knob, slider and button in about a minute. Your volumes don't change while it runs.
 
   | Lights | Controls |
   |---|---|

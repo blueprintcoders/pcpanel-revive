@@ -238,7 +238,7 @@ const TURN = {none:[], app:[['apps','apps']], device:[['device','text','devices'
   http:[['method','text','methods'],['url','text',null,'http://homeassistant.local:8123/api/services/light/turn_on'],
     ['headers','area',null,'Authorization: Bearer ...\nContent-Type: application/json'],['body','area',null,'{"entity_id": "light.desk", "brightness_pct": {value}}']]};
 const TURN_LABEL = {none:'Nothing', app:'App volume', device:'Device volume', obs:'OBS source volume', voicemeeter:'Voicemeeter parameter', command:'Run command', brightness:'LED brightness',
-  keys:'Keystrokes as you turn (scroll, zoom, brush size...)', http:'Smart light dimmer / web request'};
+  keys:'Keystrokes as you turn (scroll, zoom, brush size)', http:'Smart light dimmer / web request'};
 const TURN_DEFAULTS = {keys: {up: 'scroll_down', down: 'scroll_up', steps: 24}, http: {method: 'POST'}};
 // One-click starting points for the dimmer; the user fills in their own address, token and light.
 const DIMMER_TEMPLATES = {
@@ -267,8 +267,8 @@ const ACT_LABEL = {mute_turn:'Mute what this dial controls', mute_app:'Toggle ap
   obs_scene:'OBS: switch scene', obs_mute:'OBS: toggle mute', obs_record:'OBS: toggle recording', obs_stream:'OBS: toggle stream', voicemeeter:'Voicemeeter script',
   focus_app:'Focus or open app', open:'Open website, file or folder', type_text:'Type text', mute_mic:'Toggle microphone mute',
   lock_pc:'Lock PC', monitor_off:'Turn displays off/on', lights_toggle:'Turn panel lights on/off',
-  set_app_volume:'Set app volume to...', set_device_volume:'Set device volume to...', mute_others:'Focus mode: mute all other apps',
-  http:'Web request (Home Assistant, webhooks...)', app_output:'Send app to audio device', shift:'Shift: use another profile while held', cheat_sheet:'Show a cheat sheet of every control'};
+  set_app_volume:'Set app volume to a level', set_device_volume:'Set device volume to a level', mute_others:'Focus mode: mute all other apps',
+  http:'Web request (Home Assistant, webhooks)', app_output:'Send app to audio device', shift:'Shift: use another profile while held', cheat_sheet:'Show a cheat sheet of every control'};
 const SPECIAL = {focused: ['Focused window', 'Whatever app is in front'], system: ['System sounds', 'Windows notification sounds'], unmapped: ['Everything else', 'Every app not on another control']};
 
 let cfg = null, dirty = false, tab = 'controls', lastValues = [], lastCfgJson = '', appInfo = {};
@@ -313,7 +313,7 @@ function comboList(anchor, options, query, current, onPick, opts = {}) {
     openCombo = {anchor, pop, idx: 0, items: [], search: null};
     anchor.classList.add('open');
     if (opts.search) {
-      const s = h('input', {class: 'pop-search', placeholder: 'Search...', spellcheck: 'false', autocomplete: 'off'});
+      const s = h('input', {class: 'pop-search', placeholder: 'Search', spellcheck: 'false', autocomplete: 'off'});
       s.oninput = () => comboList(anchor, options, s.value, current, onPick, opts);
       s.onkeydown = e => { comboKeys(e, () => closeCombo()); };
       pop.append(s);
@@ -415,7 +415,7 @@ function comboFree(get, set, options, {placeholder = '', clearOnPick = false, re
     if (v !== get() || clearOnPick) set(v);
     show();
   };
-  const all = record ? [{label: '⏺  Record a shortcut...', run: 'record', value: '\0rec'}, ...options] : options;
+  const all = record ? [{label: '⏺  Record a shortcut', run: 'record', value: '\0rec'}, ...options] : options;
   const pick = o => {
     closeCombo();
     if (o.run === 'record') return recordKeys(inp, v => { set(v); show(); });
@@ -533,7 +533,7 @@ function chips(o, k, list) {
   const wrap = h('div', {class: 'chips'});
   const draw = () => {
     put(wrap, o[k].map((v, i) => h('span', {class: 'chip'}, h('span', {}, v), h('button', {title: 'Remove', onclick: () => { o[k].splice(i, 1); touch(); draw(); }}, '×'))),
-      comboFree(() => '', v => { if (v && !o[k].includes(v)) { o[k].push(v); touch(); draw(); } }, listOptions(list), {placeholder: 'add...', clearOnPick: true}));
+      comboFree(() => '', v => { if (v && !o[k].includes(v)) { o[k].push(v); touch(); draw(); } }, listOptions(list), {placeholder: 'add', clearOnPick: true}));
   };
   draw();
   return wrap;
@@ -559,10 +559,10 @@ function appChips(o, k) {
   const draw = () => {
     put(wrap, o[k].map((v, i) => h('span', {class: 'chip', title: v}, appLook(v).icon ? h('img', {src: appLook(v).icon, alt: ''}) : null, h('span', {}, appLook(v).name),
         h('button', {title: 'Remove', onclick: () => { o[k].splice(i, 1); touch(); draw(); }}, '×'))),
-      h('input', {placeholder: 'type or paste exe...', onkeydown: e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); add(e.target.value); e.target.value = ''; } },
+      h('input', {placeholder: 'type or paste exe', onkeydown: e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); add(e.target.value); e.target.value = ''; } },
         onpaste: e => { e.preventDefault(); add(e.clipboardData.getData('text')); }, onblur: e => { add(e.target.value); e.target.value = ''; }}),
       h('button', {class: 'small', onclick: () => openPicker({multi: true, has: x => o[k].includes(x), toggle: x => {
-        const i = o[k].indexOf(x); i < 0 ? o[k].push(x) : o[k].splice(i, 1); touch(); draw(); }})}, 'Pick...'));
+        const i = o[k].indexOf(x); i < 0 ? o[k].push(x) : o[k].splice(i, 1); touch(); draw(); }})}, 'Pick'));
   };
   draw();
   return wrap;
@@ -575,7 +575,7 @@ function appOne(o, k) {
       const found = pickerApps.find(a => a.exe === x);
       if ('type' in o && o.type === 'focus_app' && found && found.path) o.launch = found.path;
       touch(); if (o.type === 'focus_app') drawEditor();
-    }})}, 'Pick...'));
+    }})}, 'Pick'));
 }
 
 let pickerOpts = null, pickerApps = [], pickerQuery = '';
@@ -603,7 +603,7 @@ function drawPicker() {
     appIcon(exe), h('div', {class: 'nm'}, h('div', {}, name), h('div', {class: 'ex'}, sub)), badge ? h('span', {class: 'badge'}, 'audio') : null, h('span', {class: 'tick'}, '✓'));
   const audio = pickerApps.filter(a => a.audio && match(a)), other = pickerApps.filter(a => !a.audio && match(a));
   const special = pickerOpts.special ? Object.entries(SPECIAL).filter(([k, [n]]) => !q || n.toLowerCase().includes(q) || k.includes(q)) : [];
-  const search = h('input', {placeholder: 'Search apps...', value: pickerQuery, oninput: e => { pickerQuery = e.target.value; const pos = e.target.selectionStart; drawPicker(); const s = $('#pk-search'); s.focus(); s.setSelectionRange(pos, pos); }, id: 'pk-search'});
+  const search = h('input', {placeholder: 'Search apps', value: pickerQuery, oninput: e => { pickerQuery = e.target.value; const pos = e.target.selectionStart; drawPicker(); const s = $('#pk-search'); s.focus(); s.setSelectionRange(pos, pos); }, id: 'pk-search'});
   const pointBtn = h('button', {onclick: async e => {
     const b = e.target; b.disabled = true; b.textContent = 'Now click the app\'s window...';
     try { const r = await (await fetch('/api/pick')).json(); toHost('focus'); if (r.exe) { await loadApps(); pickerChoose(r.exe); } else b.textContent = 'Nothing picked - try again'; }
@@ -619,7 +619,7 @@ function drawPicker() {
       q && normExe(q) && !pickerApps.some(a => a.exe === normExe(q)) && !SPECIAL[normExe(q)]
         ? [h('div', {class: 'pk-sec'}, 'Use typed name'), item(normExe(q), normExe(q), 'not running right now')] : null),
     h('div', {class: 'pk-foot'},
-      h('button', {onclick: () => $('#browse').click()}, 'Browse for .exe...'),
+      h('button', {onclick: () => $('#browse').click()}, 'Browse for .exe'),
       pointBtn,
       h('span', {class: 'spacer'}),
       h('button', {class: 'pri', onclick: () => $('#picker').close()}, 'Done'))));
@@ -878,7 +878,7 @@ function drawEditor() {
     const names = cfg.profile_slider.profiles;
     return put(box, h('div', {class: 'ed-head'}, h('h2', {}, ctlName(i)), h('span', {class: 'hint'}, 'Profile slider')),
       h('section', {class: 'sec'}, h('div', {class: 'hint'}, `Slide it to switch profiles, from the bottom: ${names.join(', ')}. It does this in every profile.`),
-        h('div', {class: 'row'}, h('button', {onclick: () => { tab = 'settings'; render(); }}, 'Change in Settings...'))));
+        h('div', {class: 'row'}, h('button', {onclick: () => { tab = 'settings'; render(); }}, 'Change in Settings'))));
   }
   put(box,
     h('div', {class: 'ed-head'}, h('h2', {}, ctlName(i)),
@@ -1086,19 +1086,19 @@ function lightingTab() {
 function settingsTab() {
   const p = prof();
   return [h('div', {class: 'panel'}, h('h2', {}, 'Panel'),
-      row('', h('button', {class: 'pri', onclick: selfTest}, 'Test my panel...'),
+      row('', h('button', {class: 'pri', onclick: selfTest}, 'Test my panel'),
         h('span', {class: 'hint'}, 'Checks every light, knob, slider and button. Takes about a minute.')),
-      row('', h('button', {onclick: quickSetup}, 'Quick setup...'),
+      row('', h('button', {onclick: quickSetup}, 'Quick setup'),
         h('span', {class: 'hint'}, 'A ready-made layout for the apps on this PC, added as a new profile.'))),
     isPro() ? profileSliderPanel() : null,
     h('div', {class: 'panel'}, h('h2', {}, 'This profile'),
       row('Auto apps', appChips(p, 'auto_apps')),
       h('div', {class: 'hint'}, 'Switch to this profile while one of these apps has focus, and back when it loses focus.'),
-      row('Share', h('button', {onclick: exportProfile}, 'Export this profile...'), h('button', {onclick: () => $('#profileFile').click()}, 'Import a profile file...'))),
+      row('Share', h('button', {onclick: exportProfile}, 'Export this profile'), h('button', {onclick: () => $('#profileFile').click()}, 'Import a profile file'))),
     h('div', {class: 'panel'}, h('h2', {}, 'Import from the official PCPanel software'),
       h('div', {class: 'row'},
         h('button', {onclick: () => importStock(), disabled: !stock.found, title: stock.found ? stock.path : 'Not found on this PC'}, 'Import from this PC'),
-        h('button', {onclick: () => $('#importFile').click()}, 'Import a save.json file...')),
+        h('button', {onclick: () => $('#importFile').click()}, 'Import a save.json file')),
       h('div', {class: 'hint'}, stock.found ? `Found ${stock.path}` : 'The official software isn\'t installed here. Pick a save.json copied from another PC (it lives in %LOCALAPPDATA%\\PCPanel Software).'),
       h('div', {class: 'hint'}, 'Imported profiles are added next to yours, and Undo takes them back.')),
     h('div', {class: 'panel'}, h('h2', {}, 'App'),
@@ -1193,7 +1193,7 @@ function alertsTab() {
         h('button', {class: 'x', title: 'Delete alert', onclick: () => { cfg.alerts.splice(n, 1); touch(); draw(); drawDevice(); }}, '×')),
       row('App', appOne(a, 'app')),
       a.trigger === 'mic' ? h('div', {class: 'hint indent'}, 'Leave empty to light up whenever any app is using a microphone.') : null,
-      row('When', select(a, 'trigger', {flash: 'It flashes its taskbar button (new message)', notification: 'It shows a Windows notification', title: 'Its window title contains...',
+      row('When', select(a, 'trigger', {flash: 'It flashes its taskbar button (new message)', notification: 'It shows a Windows notification', title: 'Its window title contains some text',
         mic: 'It\'s using the microphone (on air)'}, draw)),
       a.trigger === 'notification' ? [row('Source', comboFree(() => a.pattern || '', v => { a.pattern = v; touch(); }, notifSources.map(v => ({value: v, label: v})), {placeholder: 'automatic, from the app name'})),
         h('div', {class: 'hint indent'}, 'Lights on each new notification from this app; clears when you open the app or dismiss its notifications. If it doesn\'t fire, pick the app\'s entry under Source.')] : null,
