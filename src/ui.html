@@ -172,6 +172,8 @@ textarea{flex:1;min-width:220px;font:12px Consolas,monospace;color:var(--text);b
 .presets-panel{max-width:1100px}
 .light-layout{display:grid;grid-template-columns:minmax(360px,560px) minmax(0,1fr);gap:24px;align-items:start}
 .light-layout .panel{max-width:none}
+.light-layout>div:first-child{position:sticky;top:90px}
+@media (max-width:980px){.light-layout>div:first-child{position:static}}
 @media (max-width:980px){.light-layout{grid-template-columns:1fr}}
 .presets{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:10px}
 .preset{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;padding:10px;border-radius:10px;background:#202027}
@@ -954,11 +956,23 @@ const PRESETS = [
     logo: {mode: 'rainbow', speed: 100, brightness: 255}},
   {name: 'Rainbow Wave', desc: 'A rainbow that rolls across the whole panel', brightness: 90, mode: 'wave',
     wave: {hue: 0, speed: 140, anim_brightness: 255, reverse: false, bounce: false}},
-  {name: 'Party', desc: 'Spectrum colors, and every light dances to the music whenever something plays', brightness: 100, labels: 'match', viz: true,
+  {name: 'Party', desc: 'Rainbow bands that bounce to the music; Spectrum colors when it\'s quiet', brightness: 100, labels: 'match', viz: {viz: 'rainbow'},
     knobs: [['static', '#ff3b30'], ['static', '#ff9500'], ['static', '#ffcc00'], ['static', '#34c759'], ['static', '#00c7be']],
     sliders: [['volume', '#007aff', '#007aff'], ['volume', '#5856d6', '#5856d6'], ['volume', '#af52de', '#af52de'], ['volume', '#ff2d55', '#ff2d55']],
     logo: {mode: 'rainbow', speed: 100, brightness: 255}},
+  vizPreset('Neon Club', 'Deep violet that flares electric cyan on every hit', 'colors', '#6a00ff', '#00fff0'),
+  vizPreset('Bonfire', 'Embers that blaze from red to gold as the music gets louder', 'colors', '#ff1a00', '#ffd000'),
+  vizPreset('Synthwave', 'Hot pink to sunset orange, straight out of the 80s', 'colors', '#ff00c8', '#ffb000'),
+  vizPreset('Toxic', 'Acid green to lemon, loud and bright', 'colors', '#00ff40', '#eaff00'),
+  vizPreset('Heartbeat', 'Everything pulses red together, in time with the beat', 'pulse', '#300008', '#ff1a3c'),
+  vizPreset('Deep Sea', 'One calm blue glow that breathes with the music', 'pulse', '#001030', '#1a8cff'),
+  vizPreset('Strobe', 'White flashes on every beat, for parties', 'pulse', '#101010', '#ffffff'),
 ];
+// A visualizer preset: the look when it's quiet uses the same colors, and the visualizer runs while audio plays.
+function vizPreset(name, desc, style, low, high) {
+  return {name, desc, brightness: 100, labels: high, viz: {viz: style, viz_low: low, viz_high: high},
+    knobs: Array(5).fill(['gradient', style === 'pulse' ? high : low, high]), sliders: Array(4).fill(['gradient', low, high]), logo: {mode: 'static', color: high}};
+}
 function applyPreset(pr) {
   const p = prof(), l = p.lighting;
   l.brightness = pr.brightness;
@@ -975,7 +989,7 @@ function applyPreset(pr) {
     });
     l.logo = {...l.logo, ...pr.logo};
   }
-  if (pr.viz) Object.assign(l, {viz_when: 'playing', viz: 'rainbow'});
+  if (pr.viz) Object.assign(l, {viz_when: 'playing'}, pr.viz);
   touch(); render();
   $('#status').textContent = `Applied ${pr.name} - Undo goes back`;
 }
@@ -1032,7 +1046,10 @@ function lightingTab() {
     const anim = ['rainbow', 'wave', 'breath'].includes(l.mode);
     const presets = h('div', {class: 'panel presets-panel'}, h('h2', {}, 'Presets'),
       h('div', {class: 'hint'}, 'Click one to apply it to this profile. Mute colors are kept, and Undo takes it back.'),
-      h('div', {class: 'presets'}, PRESETS.map(presetCard)));
+      h('div', {class: 'presets'}, PRESETS.filter(p => !p.viz).map(presetCard)),
+      h('h2', {style: 'margin-top:18px'}, 'Music visualizer presets'),
+      h('div', {class: 'hint'}, 'These colors while it\'s quiet, and lights that dance to whatever you play.'),
+      h('div', {class: 'presets'}, PRESETS.filter(p => p.viz).map(presetCard)));
     put(box, h('div', {class: 'light-layout'}, h('div', {},
       h('div', {class: 'panel'}, h('h2', {}, 'Lighting (this profile)'),
       row('Mode', select(l, 'mode', {custom: 'Per control (set on each card)', color: 'Single color', rainbow: 'Rainbow', wave: 'Wave', breath: 'Breath'}, draw)),
@@ -1053,8 +1070,8 @@ function lightingTab() {
         row('Show it', select(l, 'viz_when', {off: 'Off', playing: 'While audio is playing', always: 'All the time'}, draw)),
         l.viz_when === 'playing' ? [row('Only for', appChips(l, 'viz_apps')),
           h('div', {class: 'hint indent'}, 'Leave empty to start for any app. Add apps (e.g. Spotify) so only their audio starts it, not a video call or game. Windows sounds never count.')] : null,
-        l.viz_when && l.viz_when !== 'off' ? [row('Colors', select(l, 'viz', {rainbow: 'Rainbow', colors: 'Two colors, quiet to loud'}, draw),
-            l.viz === 'colors' ? [color(l, 'viz_low'), 'to', color(l, 'viz_high')] : null),
+        l.viz_when && l.viz_when !== 'off' ? [row('Style', select(l, 'viz', {rainbow: 'Rainbow bands', colors: 'Two colors, quiet to loud', pulse: 'One color, all pulsing together'}, draw),
+            l.viz === 'colors' ? [color(l, 'viz_low'), 'to', color(l, 'viz_high')] : l.viz === 'pulse' ? color(l, 'viz_high') : null),
           h('div', {class: 'hint indent'}, 'It listens to your speakers\' output only. Nothing is recorded or saved.')] : null)), presets));
   };
   draw();
