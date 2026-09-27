@@ -825,8 +825,8 @@ function lightRows(c, i, redraw) {
   const l = c.light, slider = i >= KNOBS, mode = prof().lighting.mode;
   const modes = slider
     ? {none: 'Off', static: 'Static', gradient: 'Gradient', volume: 'Fill with position', level: 'Fill with the real volume', meter: 'Meter: its audio level'}
-    : {none: 'Off', static: 'Static', gradient: 'Gradient with position', level: 'Color follows the real volume', meter: 'Pulse with its audio'};
-  const liveHint = {level: 'Shows the actual volume, even when it was changed somewhere else (e.g. the Windows mixer).',
+    : {none: 'Off', static: 'One color', gradient: 'Color blends as you turn it', level: 'Color blends with the real volume', meter: 'Brightness pulses with its audio'};
+  const liveHint = {level: 'The whole ring blends between the two colors by the app\'s actual volume, even when it was changed somewhere else (e.g. the Windows mixer).',
     meter: slider ? 'Lights up with the sound the slider controls - bottom half first, the top when it gets loud.' : 'Brightness follows the sound this knob controls.'}[l.mode];
   return [mode !== 'custom' ? h('div', {class: 'hint'}, `The panel is set to \"${mode}\" on the Lighting tab. These colors apply when it's set to \"Per control\".`) : null,
     row('Mode', select(l, 'mode', modes, redraw), l.mode !== 'none' ? color(l, 'color') : null, ['gradient', 'volume'].includes(l.mode) ? ['to', color(l, 'color2')] : null),
