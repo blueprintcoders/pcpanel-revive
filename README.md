@@ -133,7 +133,7 @@ If an app's volume was changed somewhere else (like the Windows mixer), turning 
 - **Share:** *Settings > Export this profile* saves a `.pcpanel.json` file; *Import a profile file* adds one.
 - **Shift layer:** add *Shift: use another profile while held* under a knob's **Hold**. While you hold that knob, every other control does what it does in the other profile; let go and it's back. Under a press instead, it stays until you press that knob again.
 - **Profile slider** (Pro): *Settings > Profile slider* turns one slider into a profile switch. Its light fills up to where it is: the first profile you list is at the bottom, up to one segment lit, the next is two lit, and so on, and the last one keeps the rest of the way up. Up to five profiles, one per segment, and you can tell which one is on at a glance: give each profile its own fill color, or blend from a bottom color to a top color so every segment has its own shade.
-- **Cheat sheet:** add *Show a cheat sheet of every control* to a button. Under Hold, an on-screen list of what every knob and slider does appears while you hold it; after a Shift action, it shows the other profile.
+- **Cheat sheet:** add *Show a cheat sheet of every control* to a button. Under Hold, a map of your panel appears on screen while you hold it: a card for each knob and slider, laid out as on the device and marked in its light color, with what turning, pressing, double pressing and holding it does. After a Shift action, it shows the other profile.
 
 ### Settings, self-test and backups
 

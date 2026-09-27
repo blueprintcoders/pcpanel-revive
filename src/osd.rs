@@ -20,6 +20,20 @@ pub enum Icon {
     Light,
 }
 
+/// One control on the cheat sheet.
+#[derive(Clone, Default, Debug, PartialEq)]
+pub struct SheetItem {
+    /// "K1", "S3"
+    pub tag: String,
+    /// Its label, or what turning it does; empty when unused.
+    pub title: String,
+    /// What turning does (when the title is a label), then its press, double press and hold.
+    pub lines: Vec<String>,
+    /// The control's light color.
+    pub color: [u8; 3],
+    pub knob: bool,
+}
+
 #[derive(Clone, Default, Debug)]
 pub struct Info {
     pub title: String,
@@ -31,8 +45,8 @@ pub struct Info {
     pub muted: bool,
     pub hint: String,
     pub top: bool,
-    /// Cheat sheet rows: (tag, what turning does, what pressing does). Shown instead of the volume popup.
-    pub sheet: Vec<[String; 3]>,
+    /// Cheat sheet cards, one per control. Shown instead of the volume popup.
+    pub sheet: Vec<SheetItem>,
     /// How long to show it (0 = the usual moment).
     pub stay_ms: u64,
     /// Fade out the cheat sheet now.
@@ -319,35 +333,74 @@ unsafe fn text(dc: HDC, s: &str, r: RECT, color: COLORREF, font: HFONT, flags: D
     DrawTextW(dc, &mut t, &mut r, flags | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 }
 
-/// The cheat sheet: the profile's name, then one row per control, centered on screen.
+/// The cheat sheet: a map of the panel, with a card for each control where it sits on the device
+/// (Pro: two knobs, three knobs, four sliders; Mini and original: one row of four), centered on screen.
 unsafe fn render_sheet(st: &mut State, info: &Info) {
     let k = GetDpiForSystem() as f32 / 96.0;
     let px = |v: f32| (v * k).round() as i32;
-    let (row_h, head) = (px(30.0), px(52.0));
-    let (w, h) = (px(680.0), head + row_h * info.sheet.len() as i32 + px(14.0));
+    let n = info.sheet.len();
+    let rows: Vec<Vec<usize>> = if n > 4 { vec![vec![0, 1], vec![2, 3, 4], (5..n).collect()] } else { vec![(0..n).collect()] };
+    // Cards are as tall as the busiest one needs: tag, name, then up to four lines.
+    let most = info.sheet.iter().map(|it| it.lines.len().min(4)).max().unwrap_or(0).max(1) as f32;
+    let (cw, ch, gap, pad, head, split) = (px(222.0), px(72.0 + 19.0 * most), px(12.0), px(20.0), px(56.0), px(14.0));
+    let w = pad * 2 + cw * 4 + gap * 3;
+    let h = head + rows.len() as i32 * (ch + gap) - gap + if n > 4 { split } else { 0 } + pad;
     let bits = canvas(st, w, h);
     let font = |size: f32, weight: i32| CreateFontW(px(size), 0, 0, 0, weight, 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, 0, w!("Segoe UI"));
-    let (title, bold, normal) = (font(19.0, 600), font(14.0, 700), font(14.0, 400));
-    let old = SelectObject(st.dc, title.into());
-    let (x0, right) = (px(20.0), w - px(20.0));
-    text(st.dc, &info.title, RECT { left: x0, top: px(12.0), right: right - px(200.0), bottom: px(40.0) }, rgb(240, 240, 245), title, DT_LEFT);
-    text(st.dc, &info.hint, RECT { left: right - px(200.0), top: px(12.0), right, bottom: px(40.0) }, rgb(140, 140, 152), normal, DT_RIGHT);
-    let line = CreateSolidBrush(rgb(48, 48, 58));
-    for (n, [tag, turn, press]) in info.sheet.iter().enumerate() {
-        let top = head + row_h * n as i32;
-        FillRect(st.dc, &RECT { left: x0, top, right, bottom: top + 1 }, line);
-        let cell = |l: f32, r: i32| RECT { left: x0 + px(l), top, right: r, bottom: top + row_h };
-        text(st.dc, tag, cell(0.0, x0 + px(36.0)), rgb(79, 157, 255), bold, DT_LEFT);
-        let unset = turn.is_empty() && press.is_empty();
-        let (what, color) = if unset { ("Not used", rgb(110, 110, 120)) } else { (turn.as_str(), rgb(232, 232, 238)) };
-        text(st.dc, what, cell(42.0, x0 + px(270.0)), color, normal, DT_LEFT);
-        text(st.dc, press, cell(282.0, right), rgb(170, 170, 182), normal, DT_LEFT);
+    let (title_f, tag_f, name_f, line_f) = (font(19.0, 600), font(14.0, 700), font(15.0, 600), font(13.0, 400));
+    let old = SelectObject(st.dc, title_f.into());
+    text(st.dc, &info.title, RECT { left: pad, top: px(12.0), right: w - pad - px(200.0), bottom: px(42.0) }, rgb(240, 240, 245), title_f, DT_LEFT);
+    text(st.dc, &info.hint, RECT { left: w - pad - px(200.0), top: px(12.0), right: w - pad, bottom: px(42.0) }, rgb(140, 140, 152), line_f, DT_RIGHT);
+    let card = CreateSolidBrush(rgb(38, 38, 47));
+    let null_pen = GetStockObject(NULL_PEN);
+    let mut y = head;
+    for (r, row) in rows.iter().enumerate() {
+        if r == 2 {
+            y += split; // a little space between the knobs and the sliders, as on the panel
+        }
+        let row_w = row.len() as i32 * cw + (row.len() as i32 - 1) * gap;
+        let mut x = (w - row_w) / 2;
+        for &idx in row {
+            let it = &info.sheet[idx];
+            let color = rgb(it.color[0], it.color[1], it.color[2]);
+            SelectObject(st.dc, null_pen);
+            SelectObject(st.dc, card.into());
+            let _ = RoundRect(st.dc, x, y, x + cw, y + ch, px(12.0), px(12.0));
+            // The control's shape in its light color: a ring for a knob, a bar for a slider.
+            let (ix, iy) = (x + px(12.0), y + px(12.0));
+            if it.knob {
+                let pen = CreatePen(PS_SOLID, px(3.0), color);
+                SelectObject(st.dc, pen.into());
+                SelectObject(st.dc, GetStockObject(NULL_BRUSH));
+                let _ = Ellipse(st.dc, ix, iy, ix + px(16.0), iy + px(16.0));
+                SelectObject(st.dc, null_pen);
+                let _ = DeleteObject(pen.into());
+            } else {
+                let bar = CreateSolidBrush(color);
+                SelectObject(st.dc, bar.into());
+                let _ = RoundRect(st.dc, ix + px(5.0), iy - px(1.0), ix + px(11.0), iy + px(17.0), px(3.0), px(3.0));
+                let _ = DeleteObject(bar.into());
+            }
+            // The tag in a lighter shade of the light's color, so dark colors stay readable.
+            let light = |v: u8| (v as u32 + (255 - v as u32) * 2 / 5) as u8;
+            let tag_c = rgb(light(it.color[0]), light(it.color[1]), light(it.color[2]));
+            text(st.dc, &it.tag, RECT { left: x + px(36.0), top: y + px(8.0), right: x + cw - px(10.0), bottom: y + px(32.0) }, tag_c, tag_f, DT_LEFT);
+            let unset = it.title.is_empty() && it.lines.is_empty();
+            let (name, name_c) = if unset { ("Not used", rgb(110, 110, 120)) } else { (it.title.as_str(), rgb(240, 240, 245)) };
+            text(st.dc, name, RECT { left: x + px(12.0), top: y + px(36.0), right: x + cw - px(10.0), bottom: y + px(60.0) }, name_c, name_f, DT_LEFT);
+            for (l, line) in it.lines.iter().take(4).enumerate() {
+                let top = y + px(62.0) + px(19.0) * l as i32;
+                text(st.dc, line, RECT { left: x + px(12.0), top, right: x + cw - px(10.0), bottom: top + px(19.0) }, rgb(170, 170, 182), line_f, DT_LEFT);
+            }
+            x += cw + gap;
+        }
+        y += ch + gap;
     }
     SelectObject(st.dc, old);
-    for f in [title, bold, normal] {
+    for f in [title_f, tag_f, name_f, line_f] {
         let _ = DeleteObject(f.into());
     }
-    let _ = DeleteObject(line.into());
+    let _ = DeleteObject(card.into());
     card_edges(bits, w, h, px(14.0) as f32);
     let work = work_area();
     st.pos = POINT { x: work.left + (work.right - work.left - w) / 2, y: work.top + (work.bottom - work.top - h) / 2 };

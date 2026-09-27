@@ -436,26 +436,35 @@ fn action_text(a: &Action) -> String {
     }
 }
 
-/// Cheat sheet rows for the first `n` controls of the active profile: (tag, turn, buttons).
-fn sheet_rows(cfg: &Config, n: usize) -> Vec<[String; 3]> {
+/// Cheat sheet cards for the first `n` controls of the active profile.
+fn sheet_rows(cfg: &Config, n: usize) -> Vec<osd::SheetItem> {
     let list = |v: &[Action]| v.iter().map(action_text).collect::<Vec<_>>().join(", ");
+    // The light's color, or the app's blue when it's off or too dark to read.
+    let rgb = |hex: &str| {
+        let h = hex.trim_start_matches('#');
+        let c = [0, 2, 4].map(|i| h.get(i..i + 2).and_then(|x| u8::from_str_radix(x, 16).ok()).unwrap_or(0));
+        if c.iter().all(|&v| v < 70) { [79, 157, 255] } else { c }
+    };
     cfg.profile().controls.iter().take(n).enumerate().map(|(i, c)| {
         let tag = if i < KNOBS { format!("K{}", i + 1) } else { format!("S{}", i - KNOBS + 1) };
+        let knob = i < KNOBS;
         if cfg.profile_slider.control() == Some(i) {
-            return [tag, format!("Profiles: {}", cfg.profile_slider.profiles.join(", ")), String::new()];
+            let color = rgb(cfg.profile_slider.colors_for(&cfg.active).1);
+            let lines = vec![cfg.profile_slider.profiles.join(", "), "Slide to switch".into()];
+            return osd::SheetItem { tag, title: "Profiles".into(), lines, color, knob };
         }
         let what = turn_text(&c.turn);
-        let turn = match (c.label.trim(), what.is_empty()) {
-            ("", _) => what,
-            (l, true) => l.to_string(),
-            (l, false) => format!("{l} ({what})"),
+        let label = c.label.trim();
+        let (title, mut lines) = match (label, what.is_empty()) {
+            ("", _) => (what, vec![]),
+            (l, true) => (l.to_string(), vec![]),
+            (l, false) => (l.to_string(), vec![what]),
         };
-        let presses = [("Press", &c.press), ("Double", &c.double), ("Hold", &c.hold)].into_iter()
+        lines.extend([("Press", &c.press), ("Double", &c.double), ("Hold", &c.hold)].into_iter()
             .filter(|(_, v)| !v.is_empty())
-            .map(|(k, v)| format!("{k}: {}", list(v)))
-            .collect::<Vec<_>>()
-            .join("    ");
-        [tag, turn, presses]
+            .map(|(k, v)| format!("{k}: {}", list(v))));
+        let color = if c.light.mode == "none" { rgb("") } else { rgb(&c.light.color) };
+        osd::SheetItem { tag, title, lines, color, knob }
     }).collect()
 }
 
@@ -1445,12 +1454,16 @@ mod tests {
         cfg.normalize();
         let rows = sheet_rows(&cfg, 9);
         assert_eq!(rows.len(), 9);
-        assert_eq!(rows[0], ["K1".to_string(), "Speakers volume".into(), "Press: Mute".into()]);
-        assert_eq!(rows[3][2], "Press: Play/pause    Double: Next track");
-        assert_eq!(rows[7][1], "Spotify volume");
+        assert_eq!((rows[0].tag.as_str(), rows[0].title.as_str()), ("K1", "Speakers volume"));
+        assert_eq!(rows[0].lines, ["Press: Mute"]);
+        assert!(rows[0].knob && !rows[5].knob);
+        assert_eq!(rows[0].color, [0xff, 0x3b, 0x30], "the knob's light color");
+        assert_eq!(rows[3].lines, ["Press: Play/pause", "Double: Next track"]);
+        assert_eq!(rows[7].title, "Spotify volume");
         let active = cfg.active.clone();
         cfg.profiles.get_mut(&active).unwrap().controls[5].label = "Browsers".into();
-        assert_eq!(sheet_rows(&cfg, 9)[5][1], "Browsers (Chrome, Firefox, Msedge volume)");
+        let s1 = &sheet_rows(&cfg, 9)[5];
+        assert_eq!((s1.title.as_str(), s1.lines[0].as_str()), ("Browsers", "Chrome, Firefox, Msedge volume"));
         assert_eq!(sheet_rows(&cfg, 4).len(), 4, "Mini: four knobs");
         assert_eq!(action_text(&Action::Run { cmd: r#""C:\Tools\obs64.exe""#.into() }), "Run obs64.exe");
     }
