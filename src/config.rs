@@ -46,18 +46,29 @@ pub struct ProfileSlider {
     /// or this one for a profile without its own.
     pub color: String,
     pub colors: BTreeMap<String, String>,
+    /// "profile": one color per profile (above) | "blend": each segment its own shade, from `low` at the bottom to `high` at the top.
+    pub style: String,
+    pub low: String,
+    pub high: String,
 }
 
 impl Default for ProfileSlider {
     fn default() -> Self {
-        ProfileSlider { slider: 0, profiles: vec![], color: "#ffffff".into(), colors: BTreeMap::new() }
+        ProfileSlider {
+            slider: 0, profiles: vec![], color: "#ffffff".into(), colors: BTreeMap::new(),
+            style: "profile".into(), low: "#ff3b30".into(), high: "#34c759".into(),
+        }
     }
 }
 
 impl ProfileSlider {
-    /// The fill color while `profile` is active.
-    pub fn color_for(&self, profile: &str) -> &str {
-        self.colors.get(profile).filter(|c| !c.is_empty()).unwrap_or(&self.color)
+    /// The fill's (bottom, top) colors while `profile` is active.
+    pub fn colors_for(&self, profile: &str) -> (&str, &str) {
+        if self.style == "blend" {
+            return (&self.low, &self.high);
+        }
+        let c = self.colors.get(profile).filter(|c| !c.is_empty()).unwrap_or(&self.color);
+        (c, c)
     }
 
     /// The slider's control index, when it's in use.

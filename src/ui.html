@@ -706,7 +706,8 @@ function ledOf(i, v) {
   if (al) return {solid: al.color, alert: al};
   if (l.mode === 'color') return {solid: l.color};
   if (l.mode !== 'custom') return {anim: true};
-  if (i === profileSlider()) { const c = sliderColor(cfg.active); return {from: c, to: c, fill: v / 255}; }
+  if (i === profileSlider()) { const ps = cfg.profile_slider, blend = ps.style === 'blend', c = sliderColor(cfg.active);
+    return {from: blend ? ps.low : c, to: blend ? ps.high : c, fill: v / 255}; }
   let lt = c.light;
   if (muted[i] && lt.mute_color) lt = {mode: 'static', color: lt.mute_color};
   if (lt.mode === 'static') return {solid: lt.color};
@@ -1137,6 +1138,10 @@ function profileSliderPanel() {
     row('Slider', combo(() => ps.slider, v => { ps.slider = v; touch(); draw(); },
       [{value: 0, label: 'Off'}, ...[1, 2, 3, 4].map(n => ({value: n, label: 'Slider ' + n}))])),
     ps.slider ? [row('Profiles', chips(ps, 'profiles', 'profiles')), h('div', {class: 'hint indent'}, 'Only existing profiles count; extras past five are ignored.'),
+      row('Look', combo(() => ps.style || 'profile', v => { ps.style = v; touch(); draw(); },
+        [{value: 'profile', label: 'One color per profile'}, {value: 'blend', label: 'Blend from bottom to top'}])),
+      ps.style === 'blend' ? row('Colors', color(ps, 'low'), 'to', color(ps, 'high'),
+        h('span', {class: 'hint'}, 'Each segment lights in its own shade between these, so every profile has its own color.')) :
       row('Colors', h('div', {class: 'displays'}, ps.profiles.filter(n => cfg.profiles[n]).map(n => h('label', {},
         h('input', {type: 'color', value: sliderColor(n), oninput: e => { ps.colors = ps.colors || {}; ps.colors[n] = e.target.value; touch(); }}), ' ', n)),
         h('div', {class: 'hint'}, 'The light fills up to the slider\'s position, in the color of the profile you\'re on.')))] : null);
