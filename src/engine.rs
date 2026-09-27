@@ -456,20 +456,20 @@ fn sheet_rows(cfg: &Config, n: usize) -> Vec<[String; 3]> {
 }
 
 /// How many of a slider's five segments the panel lights in fill mode: position / 51, rounded
-/// (measured on a Pro). That's six looks, from none lit to all five.
+/// (measured on a Pro).
 fn lit(v: i32) -> usize {
     ((v.clamp(0, 255) as f32 / 51.0).round() as usize).min(5)
 }
 
-/// Which of `n` profiles (up to six) a slider position picks: the first with no segments lit, the next
-/// with one, and so on; the last profile keeps the rest of the travel. So every change of profile is
-/// exactly where a segment turns on or off. Near an edge it stays with the current profile, so a slider
-/// resting on the line doesn't flip between two.
+/// Which of `n` profiles (up to five) a slider position picks: the first up to one segment lit (the
+/// very bottom counts as one), the next with two, and so on; the last profile keeps the rest of the way
+/// up. So every change of profile is exactly where a segment turns on or off. Near an edge it stays with
+/// the current profile, so a slider resting on the line doesn't flip between two.
 fn segment(value: u8, n: usize, current: Option<usize>) -> usize {
-    let at = |v: i32| lit(v).min(n.clamp(1, 6) - 1);
+    let at = |v: i32| (lit(v).max(1) - 1).min(n.clamp(1, 5) - 1);
     let v = value as i32;
     match current {
-        Some(c) if at(v - 6) == c || at(v + 6) == c => c,
+        Some(c) if at(v - 8) == c || at(v + 8) == c => c,
         _ => at(v),
     }
 }
@@ -651,6 +651,7 @@ impl Engine {
         self.slider_seg = Some(seg);
         if self.shift.is_none() && names[seg] != self.cfg.active {
             self.auto_prev = None;
+            log(&self.shared, format!("profile slider at {value}: {}", names[seg]));
             self.activate(&names[seg], true);
         }
     }
@@ -1419,18 +1420,17 @@ mod tests {
 
     #[test]
     fn slider_segments_have_sticky_edges() {
-        // Three profiles: none lit, one lit, then the last keeps two to five lit.
-        let picks: Vec<usize> = [0u8, 20, 30, 70, 80, 180, 255].iter().map(|&v| segment(v, 3, None)).collect();
-        assert_eq!(picks, [0, 0, 1, 1, 2, 2, 2]);
-        assert_eq!(segment(255, 5, None), 4);
-        // The first segment lights at 26.
-        assert_eq!(segment(28, 2, Some(0)), 0, "just past the edge: stays");
-        assert_eq!(segment(35, 2, Some(0)), 1);
-        assert_eq!(segment(22, 2, Some(1)), 1);
+        // Three profiles: the bottom up to one segment lit, then two lit, then the last keeps three to five.
+        let picks: Vec<usize> = [0u8, 20, 30, 70, 80, 125, 130, 180, 255].iter().map(|&v| segment(v, 3, None)).collect();
+        assert_eq!(picks, [0, 0, 0, 0, 1, 1, 2, 2, 2]);
+        // Five profiles: one per segment, switching where the panel lights the next one.
+        let picks: Vec<usize> = [0u8, 70, 80, 125, 130, 175, 182, 225, 235, 255].iter().map(|&v| segment(v, 5, None)).collect();
+        assert_eq!(picks, [0, 0, 1, 1, 2, 2, 3, 3, 4, 4]);
+        // The second segment lights at 77.
+        assert_eq!(segment(80, 2, Some(0)), 0, "just past the edge: stays");
+        assert_eq!(segment(90, 2, Some(0)), 1);
+        assert_eq!(segment(72, 2, Some(1)), 1);
         assert_eq!(segment(250, 3, Some(0)), 2, "a jump far away switches at once");
-        // Six profiles: one per light look, switching where the panel lights the next segment.
-        let picks: Vec<usize> = [0u8, 20, 30, 70, 80, 125, 130, 175, 182, 225, 235, 255].iter().map(|&v| segment(v, 6, None)).collect();
-        assert_eq!(picks, [0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
     }
 
     #[test]

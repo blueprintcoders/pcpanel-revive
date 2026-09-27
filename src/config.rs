@@ -382,10 +382,10 @@ impl Config {
         self.hold_ms = self.hold_ms.clamp(250, 3000);
         // Older configs have no value (0); 50 ms matches the official software.
         self.button_debounce_ms = if self.button_debounce_ms == 0 { 50 } else { self.button_debounce_ms.clamp(5, 200) };
-        // Five segments give six looks (none lit to all lit): up to six profiles, and only ones that exist.
+        // One profile per light segment: up to five, and only ones that exist.
         let profiles = &self.profiles;
         self.profile_slider.profiles.retain(|p| profiles.contains_key(p));
-        self.profile_slider.profiles.truncate(6);
+        self.profile_slider.profiles.truncate(5);
     }
 
     pub fn profile(&self) -> &Profile {
