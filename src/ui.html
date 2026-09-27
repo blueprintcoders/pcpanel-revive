@@ -188,6 +188,14 @@ textarea{flex:1;min-width:220px;font:12px Consolas,monospace;color:var(--text);b
 .viz-chip.on{border-color:var(--acc);background:#1f2a3a}
 .row:has(> .viz-chips)>label:first-child{align-self:flex-start;padding-top:5px}
 #selftest,#setup{width:min(620px,94vw)}
+#ask{width:min(420px,92vw)}
+#ask form{padding:18px 20px 16px;display:flex;flex-direction:column;gap:12px}
+#ask h2{margin:0;font-size:16px}
+#ask p{margin:0;color:var(--dim)}
+#ask input{width:100%}
+#ask .err{color:var(--bad);font-size:12px;min-height:16px;margin-top:-6px}
+#ask .btns{display:flex;justify-content:flex-end;gap:8px}
+button.danger{background:var(--bad);border-color:var(--bad);color:#fff}
 .setup-rows{display:grid;grid-template-columns:auto auto 1fr;gap:6px 14px;margin:12px 0 16px;font-size:13px}
 .setup-rows b{color:var(--acc)}
 .st{padding:16px 18px 18px}
@@ -227,6 +235,7 @@ textarea{flex:1;min-width:220px;font:12px Consolas,monospace;color:var(--text);b
 <dialog id="picker"></dialog>
 <dialog id="selftest"></dialog>
 <dialog id="setup"></dialog>
+<dialog id="ask"></dialog>
 <input type="file" id="profileFile" accept=".json" hidden>
 <input type="file" id="browse" accept=".exe" multiple hidden>
 <script>
@@ -1177,8 +1186,33 @@ function backupsPanel() {
   return h('div', {class: 'panel'}, h('h2', {}, 'Backups'),
     h('div', {class: 'hint'}, 'Snapshots of your settings, taken automatically (at most every 10 minutes). The last 10 are kept.'), list);
 }
+// The app's own dialog, in place of the browser's prompt() and confirm().
+// With `value` it asks for text and resolves to it (trimmed); otherwise it resolves to true. Cancel resolves to null.
+// `check(text)` returns an error to show, or '' when the text is fine.
+function ask({title, text = '', value, ok = 'OK', danger = false, check = () => ''}) {
+  const dlg = $('#ask');
+  return new Promise(resolve => {
+    const input = value === undefined ? null : h('input', {value, spellcheck: 'false', autocomplete: 'off'});
+    const err = h('div', {class: 'err'});
+    const done = v => { dlg.onclose = null; dlg.close(); resolve(v); };
+    const submit = e => {
+      e.preventDefault();
+      if (!input) return done(true);
+      const v = input.value.trim(), problem = v ? check(v) : 'Enter a name.';
+      if (problem) { err.textContent = problem; input.focus(); return; }
+      done(v);
+    };
+    put(dlg, h('form', {onsubmit: submit}, h('h2', {}, title), text ? h('p', {}, text) : null, input, input ? err : null,
+      h('div', {class: 'btns'}, h('button', {type: 'button', onclick: () => done(null)}, 'Cancel'),
+        h('button', {type: 'submit', class: danger ? 'danger' : 'pri'}, ok))));
+    dlg.onclose = () => resolve(null); // Esc
+    dlg.showModal();
+    // A destructive button never has the focus, so Enter can't delete by accident.
+    if (input) { input.focus(); input.select(); } else dlg.querySelector(danger ? 'button[type=button]' : 'button[type=submit]').focus();
+  });
+}
 async function restoreBackup(name) {
-  if (!confirm('Restore this backup? You can Undo it afterwards.')) return;
+  if (!await ask({title: 'Restore this backup?', text: 'Your current settings are replaced by the snapshot. Undo takes it back.', ok: 'Restore'})) return;
   if (saveTimer) await autosave();
   const r = await fetch('/api/restore', {method: 'POST', headers: {'X-PCP': '1'}, body: name});
   if (!r.ok) { $('#status').textContent = await r.text(); return; }
@@ -1589,16 +1623,17 @@ document.addEventListener('mouseover', e => {
   const full = el.value ?? el.textContent;
   el.title = el.scrollWidth > el.clientWidth + 1 ? full : (el.dataset.title || '');
 });
-$('#pNew').onclick = () => {
-  const n = prompt('New profile name (copies the current one):');
-  if (!n || cfg.profiles[n]) return;
+const nameFree = v => cfg.profiles[v] ? 'There\'s already a profile with that name.' : '';
+$('#pNew').onclick = async () => {
+  const n = await ask({title: 'New profile', text: `It starts as a copy of "${cfg.active}".`, value: '', ok: 'Create', check: nameFree});
+  if (!n) return;
   cfg.profiles[n] = JSON.parse(JSON.stringify(prof()));
   cfg.profiles[n].auto_apps = [];
   cfg.active = n; touch(); render();
 };
-$('#pRen').onclick = () => {
-  const n = prompt('Rename profile to:', cfg.active);
-  if (!n || cfg.profiles[n]) return;
+$('#pRen').onclick = async () => {
+  const n = await ask({title: 'Rename profile', value: cfg.active, ok: 'Rename', check: v => v === cfg.active ? '' : nameFree(v)});
+  if (!n || n === cfg.active) return;
   const old = cfg.active;
   cfg.profiles[n] = prof(); delete cfg.profiles[old]; cfg.active = n;
   // Keep everything that points at the profile by name.
@@ -1609,8 +1644,12 @@ $('#pRen').onclick = () => {
     if ((a.type === 'profile' && a.name === old) || (a.type === 'shift' && a.profile === old)) a.type === 'profile' ? a.name = n : a.profile = n;
   touch(); render();
 };
-$('#pDel').onclick = () => {
-  if (Object.keys(cfg.profiles).length < 2 || !confirm(`Delete profile "${cfg.active}"?`)) return;
+$('#pDel').onclick = async () => {
+  if (Object.keys(cfg.profiles).length < 2) {
+    await ask({title: 'Can\'t delete the last profile', text: 'Create another profile first.', ok: 'OK'});
+    return;
+  }
+  if (!await ask({title: `Delete "${cfg.active}"?`, text: 'Undo brings it back.', ok: 'Delete', danger: true})) return;
   delete cfg.profiles[cfg.active]; cfg.active = Object.keys(cfg.profiles)[0]; touch(); render();
 };
 window.addEventListener('focus', loadDevices);
