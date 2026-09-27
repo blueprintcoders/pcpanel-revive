@@ -98,8 +98,8 @@ Type or paste exe names (`spotify`, `discord.exe`; commas work), or click **Pick
 
 ![Lighting presets](docs/screenshots/lighting.webp)
 
-- **Presets:** 10 ready-made looks, plus 8 music visualizer presets (Party, Neon Club, Bonfire, Synthwave, Toxic, Heartbeat, Deep Sea, Strobe). Click one to apply it to the current profile; Undo goes back.
-- **Music visualizer:** on top of your normal lighting, turn it on *while audio is playing* (optionally only for chosen apps, like Spotify) or *all the time*. While it runs, everything dances to what your speakers play: on the Pro, the sliders show bass, low mids, high mids and treble, the knobs pulse with the same bands and flash on the beat, and the logo follows the overall level. When the music stops, your lighting comes back. Styles: rainbow bands, two colors of your own (quiet to loud), or one color with everything pulsing together to the beat. It only listens to the speakers' output, and nothing is recorded.
+- **Presets:** 10 ready-made looks. Click one to apply it to the current profile; Undo goes back.
+- **Music visualizer:** on top of your normal lighting, turn it on *while audio is playing* (optionally only for chosen apps, like Spotify) or *all the time*. While it runs, everything dances to what your speakers play: on the Pro, the sliders show bass, low mids, high mids and treble, the knobs pulse with the same bands and flash on the beat, and the logo follows the overall level. When the music stops, your lighting comes back. Styles: rainbow bands, two colors of your own (quiet to loud), or one color with everything pulsing together to the beat. One-click visualizer presets (Party, Neon Club, Bonfire, Synthwave, Toxic, Heartbeat, Deep Sea, Strobe) change only the visualizer, not your lighting. It only listens to the speakers' output, and nothing is recorded.
 - **Per control:** static, gradient, fill with position, **meter** (pulses with the control's audio), or **real volume**.
 - **When muted:** turn a control's LED a color of your choice (e.g. red) while its app or device is muted.
 - **Whole panel:** single color, rainbow, wave or breath, plus the logo and slider labels on the Pro.
