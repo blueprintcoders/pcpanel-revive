@@ -743,7 +743,7 @@ function deviceSvg() {
   };
   const caption = (i, x, y, w) => {
     const t = i === profileSlider() ? {name: 'Profiles', glyph: 'star'} : target(p.controls[i]), icon = t.exe && appLook(t.exe).icon;
-    const label = p.controls[i].label || t.name;
+    const label = i === profileSlider() ? t.name : p.controls[i].label || t.name;
     const iw = icon || t.glyph ? 18 : 0, room = w - iw;
     let txt = label;
     while (txt.length > 1 && textWidth(txt) > room) txt = txt.slice(0, -2) + '...';
