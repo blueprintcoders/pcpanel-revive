@@ -45,6 +45,17 @@ fn vk(name: &str) -> Option<(u16, bool)> {
             let f: u16 = n[1..].parse().ok().filter(|f| (1..=24).contains(f))?;
             key(VIRTUAL_KEY(VK_F1.0 + f - 1))
         }
+        "[" => key(VK_OEM_4),
+        "]" => key(VK_OEM_6),
+        "," => key(VK_OEM_COMMA),
+        "." => key(VK_OEM_PERIOD),
+        "-" => key(VK_OEM_MINUS),
+        "=" => key(VK_OEM_PLUS),
+        ";" => key(VK_OEM_1),
+        "'" => key(VK_OEM_7),
+        "/" => key(VK_OEM_2),
+        "\\" => key(VK_OEM_5),
+        "`" => key(VK_OEM_3),
         _ if n.len() == 1 => {
             let c = n.chars().next()?.to_ascii_uppercase();
             c.is_ascii_alphanumeric().then_some((c as u16, false))
@@ -53,10 +64,21 @@ fn vk(name: &str) -> Option<(u16, bool)> {
     }
 }
 
-/// Press a combo like "ctrl+shift+m" or "play_pause".
+/// Press a combo like "ctrl+shift+m" or "play_pause". It can end in a mouse wheel step:
+/// "scroll_up", "scroll_down", "scroll_left", "scroll_right" (e.g. "ctrl+scroll_up" zooms in).
 pub fn send_keys(combo: &str) -> Result<(), String> {
-    let keys: Vec<(u16, bool)> = combo
-        .split('+')
+    let mut parts: Vec<&str> = combo.split('+').collect();
+    let wheel = match parts.last().map(|k| k.trim().to_lowercase()).as_deref() {
+        Some("scroll_up") => Some((MOUSEEVENTF_WHEEL, 120)),
+        Some("scroll_down") => Some((MOUSEEVENTF_WHEEL, -120)),
+        Some("scroll_right") => Some((MOUSEEVENTF_HWHEEL, 120)),
+        Some("scroll_left") => Some((MOUSEEVENTF_HWHEEL, -120)),
+        _ => None,
+    };
+    if wheel.is_some() {
+        parts.pop();
+    }
+    let keys: Vec<(u16, bool)> = parts.iter()
         .map(|k| vk(k).ok_or_else(|| format!("unknown key '{k}'")))
         .collect::<Result<_, _>>()?;
     let input = |(v, ext): (u16, bool), up: bool| {
@@ -69,6 +91,10 @@ pub fn send_keys(combo: &str) -> Result<(), String> {
         }
     };
     let mut seq: Vec<INPUT> = keys.iter().map(|&k| input(k, false)).collect();
+    if let Some((flags, delta)) = wheel {
+        let mi = MOUSEINPUT { mouseData: delta as u32, dwFlags: flags, ..Default::default() };
+        seq.push(INPUT { r#type: INPUT_MOUSE, Anonymous: INPUT_0 { mi } });
+    }
     seq.extend(keys.iter().rev().map(|&k| input(k, true)));
     unsafe { SendInput(&seq, std::mem::size_of::<INPUT>() as i32) };
     Ok(())

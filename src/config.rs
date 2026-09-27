@@ -141,8 +141,16 @@ pub enum Turn {
     /// `{value}` (0-100) is substituted.
     Command { #[serde(default)] cmd: String },
     Brightness,
+    /// One keystroke per step: `up` when turned right / slid up, `down` the other way.
+    /// `steps` is how many steps the full travel has.
+    Keys {
+        #[serde(default)] up: String,
+        #[serde(default)] down: String,
+        #[serde(default = "steps")] steps: u8,
+    },
 }
 fn db_min() -> f32 { -60.0 }
+fn steps() -> u8 { 24 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]

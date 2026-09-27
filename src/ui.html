@@ -227,8 +227,12 @@ textarea{flex:1;min-width:220px;font:12px Consolas,monospace;color:var(--text);b
 const $ = s => document.querySelector(s);
 const KNOBS = 5;
 const TURN = {none:[], app:[['apps','apps']], device:[['device','text','devices']], obs:[['source','text']],
-  voicemeeter:[['param','text',null,'Strip[0].Gain'],['min_db','num'],['max_db','num']], command:[['cmd','text',null,'uses {value} 0-100']], brightness:[]};
-const TURN_LABEL = {none:'Nothing', app:'App volume', device:'Device volume', obs:'OBS source volume', voicemeeter:'Voicemeeter parameter', command:'Run command', brightness:'LED brightness'};
+  voicemeeter:[['param','text',null,'Strip[0].Gain'],['min_db','num'],['max_db','num']], command:[['cmd','text',null,'uses {value} 0-100']], brightness:[],
+  keys:[['up','text','keys','scroll_down'],['down','text','keys','scroll_up'],['steps','num']]};
+const TURN_LABEL = {none:'Nothing', app:'App volume', device:'Device volume', obs:'OBS source volume', voicemeeter:'Voicemeeter parameter', command:'Run command', brightness:'LED brightness',
+  keys:'Keystrokes as you turn (scroll, zoom, brush size...)'};
+const TURN_DEFAULTS = {keys: {up: 'scroll_down', down: 'scroll_up', steps: 24}};
+const TURN_HINT = {keys: 'Each step sends one keystroke to the app in front: scroll a page, zoom (Ctrl + wheel), change brush size in Photoshop with ] and [, or step through a video timeline with the arrow keys. Steps = how many keystrokes the full travel sends.'};
 const ACT = {mute_turn:[], mute_app:[['apps','apps']], mute_device:[['device','text','devices']], set_default:[['device','text','devices']],
   cycle_default:[['devices','list','devices']], keys:[['keys','text','keys','ctrl+shift+m']], run:[['cmd','text',null,'notepad.exe']], kill:[['process','app']],
   profile:[['name','text','profiles']], next_profile:[], obs_scene:[['scene','text']], obs_mute:[['source','text']], obs_record:[], obs_stream:[],
@@ -430,7 +434,8 @@ function recordKeys(inp, done) {
   const names = {Space: 'space', Enter: 'enter', Tab: 'tab', Backspace: 'backspace', Delete: 'delete', Insert: 'insert', Home: 'home', End: 'end',
     PageUp: 'pgup', PageDown: 'pgdn', ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', PrintScreen: 'printscreen',
     MediaPlayPause: 'play_pause', MediaTrackNext: 'next', MediaTrackPrevious: 'prev', MediaStop: 'stop',
-    AudioVolumeMute: 'mute', AudioVolumeUp: 'vol_up', AudioVolumeDown: 'vol_down'};
+    AudioVolumeMute: 'mute', AudioVolumeUp: 'vol_up', AudioVolumeDown: 'vol_down', BracketLeft: '[', BracketRight: ']', Comma: ',', Period: '.',
+    Minus: '-', Equal: '=', Semicolon: ';', Quote: '\'', Slash: '/', Backslash: '\\', Backquote: '`'};
   const finish = v => {
     window.removeEventListener('keydown', onKey, true);
     inp._recording = false;
@@ -460,6 +465,10 @@ const KEY_OPTIONS = [
     ['vol_up', 'Volume up'], ['vol_down', 'Volume down']].map(([value, label]) => ({value, label, group: 'Media keys'})),
   ...[['win+d', 'Show desktop'], ['alt+tab', 'Switch window'], ['win+shift+s', 'Screenshot (Snip)'], ['printscreen', 'Print Screen'],
     ['win+alt+k', 'Mute mic in Teams/Windows'], ['ctrl+shift+m', 'Ctrl + Shift + M']].map(([value, label]) => ({value, label, group: 'Windows'})),
+  ...[['scroll_down', 'Scroll down'], ['scroll_up', 'Scroll up'], ['scroll_right', 'Scroll right'], ['scroll_left', 'Scroll left'],
+    ['ctrl+scroll_up', 'Zoom in (Ctrl + wheel)'], ['ctrl+scroll_down', 'Zoom out (Ctrl + wheel)']].map(([value, label]) => ({value, label, group: 'Mouse wheel'})),
+  ...[[']', 'Bigger brush (Photoshop, Krita)'], ['[', 'Smaller brush (Photoshop, Krita)'], ['right', 'Next frame (Premiere, Resolve)'], ['left', 'Previous frame (Premiere, Resolve)'],
+    ['ctrl+z', 'Undo'], ['ctrl+y', 'Redo']].map(([value, label]) => ({value, label, group: 'Creative apps'})),
   ...[13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24].map(n => ({value: 'f' + n, label: 'F' + n, group: 'Free keys (bind these in other apps)'})),
 ];
 let deviceList = [];
@@ -606,7 +615,7 @@ $('#browse').onchange = e => {
 };
 
 function fields(o, spec) {
-  const nice = k => ({url: 'URL', level: 'Level', min_db: 'Min dB', max_db: 'Max dB', cmd: 'Command', keys: 'Keys'}[k] || k[0].toUpperCase() + k.slice(1));
+  const nice = k => ({url: 'URL', level: 'Level', min_db: 'Min dB', max_db: 'Max dB', cmd: 'Command', keys: 'Keys', up: 'Right / up', down: 'Left / down'}[k] || k[0].toUpperCase() + k.slice(1));
   return spec.map(([k, kind, list, ph]) => row(kind === 'check' ? '' : kind === 'displays' ? 'Displays' : nice(k),
     kind === 'pct' ? [num(o, k, 0, 100), '%'] : kind === 'area' ? area(o, k, ph) : kind === 'displays' ? displayPicker(o, k) : kind === 'check' ? check(o, k, ph) : kind === 'apps' ? appChips(o, k) : kind === 'app' ? appOne(o, k) : kind === 'list' ? chips(o, k, list) : kind === 'num' ? num(o, k) : text(o, k, list, ph)));
 }
@@ -651,6 +660,7 @@ function target(c) {
   if (t.type === 'voicemeeter') return {name: t.param || 'Voicemeeter', glyph: 'dot'};
   if (t.type === 'command') return {name: 'Command', glyph: 'dot'};
   if (t.type === 'brightness') return {name: 'Brightness', glyph: 'sun'};
+  if (t.type === 'keys') return {name: /scroll/.test(t.up || '') ? (/ctrl/.test(t.up) ? 'Zoom' : 'Scroll') : `Keys ${t.down || '?'} ${t.up || '?'}`, glyph: 'dot'};
   if (t.type === 'app' && t.apps && SPECIAL[t.apps[0]]) return {name: SPECIAL[t.apps[0]][0], glyph: 'star'};
   const a = c.press && c.press[0];
   if (a && a.type === 'run') {
@@ -849,14 +859,15 @@ function drawEditor() {
       h('input', {class: 'ed-label', value: c.label, placeholder: 'Add a label', oninput: e => { c.label = e.target.value; touch(); }})),
     h('div', {id: 'ed-status', class: 'ed-status'}),
     section(slider ? 'When moved' : 'When turned',
-      row('Controls', select(c.turn, 'type', TURN_LABEL, () => { c.turn = {type: c.turn.type}; redraw(); })),
-      fields(c.turn, TURN[c.turn.type] || [])),
+      row('Controls', select(c.turn, 'type', TURN_LABEL, () => { c.turn = {type: c.turn.type, ...(TURN_DEFAULTS[c.turn.type] || {})}; redraw(); })),
+      fields(c.turn, TURN[c.turn.type] || []),
+      TURN_HINT[c.turn.type] ? h('div', {class: 'hint indent'}, TURN_HINT[c.turn.type]) : null),
     slider ? null : section('When pressed', actionRows(c, 'press', redraw, i)),
     h('div', {class: 'folds'},
       slider ? null : fold('double', 'Double press', summarize(c.double), actionRows(c, 'double', redraw, i)),
       slider ? null : fold('hold', 'Hold', summarize(c.hold), [h('div', {class: 'hint'}, `Press and hold for ${cfg.hold_ms} ms (change it in Settings). A knob with a hold action runs its normal press when you let go.`),
         actionRows(c, 'hold', redraw, i)]),
-      c.turn.type !== 'none' ? fold('range', 'Range & curve', `${c.min}-${c.max}%${c.curve === 'log' ? ', logarithmic' : ''}${c.invert ? ', inverted' : ''}`, [
+      !['none', 'keys'].includes(c.turn.type) ? fold('range', 'Range & curve', `${c.min}-${c.max}%${c.curve === 'log' ? ', logarithmic' : ''}${c.invert ? ', inverted' : ''}`, [
         row('Limits', num(c, 'min', 0, 100), 'to', num(c, 'max', 0, 100), '%', check(c, 'invert', 'invert')),
         row('Curve', select(c, 'curve', {linear: 'Linear', log: 'Logarithmic - finer control at low volume'}, redraw))]) : null,
       hasLights() ? fold('light', 'Light', lightSum, lightRows(c, i, redraw)) : null));

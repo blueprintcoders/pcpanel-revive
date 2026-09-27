@@ -45,6 +45,8 @@ struct Engine {
     side: [Option<f32>; CONTROLS],
     /// Startup sync ("apply positions on connect"): take over even though the volume differs.
     force_sync: [bool; CONTROLS],
+    /// Keystroke turns: position of the last step, so each full step sends one key.
+    step_anchor: [Option<f32>; CONTROLS],
     /// Profile to return to when the auto-switched app loses focus.
     auto_prev: Option<String>,
     cfg_mtime: Option<SystemTime>,
@@ -86,7 +88,7 @@ pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Bo
         cfg, shared, post, audio, obs: Obs::default(),
         sent: [None; CONTROLS], pending: [None; CONTROLS], last_cmd: [None; CONTROLS], muted: [false; CONTROLS],
         press_deadline: [None; KNOBS], hold_deadline: [None; KNOBS], hold_fired: [false; KNOBS], debounce: [Debounce::default(); KNOBS],
-        engaged: [false; CONTROLS], last_set: [None; CONTROLS], side: [None; CONTROLS], force_sync: [false; CONTROLS],
+        engaged: [false; CONTROLS], last_set: [None; CONTROLS], side: [None; CONTROLS], force_sync: [false; CONTROLS], step_anchor: [None; CONTROLS],
         auto_prev: None, cfg_mtime: mtime(), lights_before: 0, focus_muted: vec![],
         flashing: HashSet::new(), notified: HashSet::new(), notif_seen: None, alerts_on: vec![], preview: None, anim_t0: Instant::now(),
         alert_since: vec![], alert_expired: vec![], levels: [None; CONTROLS], meters: vec![], peaks: [0.0; CONTROLS],
@@ -283,6 +285,14 @@ fn norm(app: &str) -> String {
     if a.contains('.') || matches!(a.as_str(), "focused" | "system" | "unmapped" | "") { a } else { a + ".exe" }
 }
 
+/// Keystroke turn: whole steps moved since `anchor` (positive = up) and the new anchor.
+/// The anchor jumps a whole step at a time, so jitter around a step never repeats a key.
+fn key_steps(anchor: f32, raw: u8, steps: u8) -> (i32, f32) {
+    let size = 255.0 / steps.clamp(2, 128) as f32;
+    let n = ((raw as f32 - anchor) / size).trunc() as i32;
+    (n, anchor + n as f32 * size)
+}
+
 /// Is a microphone in use by this app (or by any app, for an empty `exe`)?
 fn mic_matches(users: &[String], exe: &str) -> bool {
     let stem = exe.trim_end_matches(".exe");
@@ -316,6 +326,11 @@ impl Engine {
             }
             Msg::Hid(Event::Turn { index, value, initial }) => {
                 crate::lock(&self.shared).values[index] = value;
+                // Keystroke turns count steps from the last one; everything else just tracks the position.
+                let keys = matches!(self.cfg.profile().controls[index].turn, Turn::Keys { .. });
+                if !keys || initial || self.testing() || self.step_anchor[index].is_none() {
+                    self.step_anchor[index] = Some(value as f32);
+                }
                 if self.testing() {
                     self.sent[index] = Some(value);
                     return;
@@ -672,6 +687,19 @@ impl Engine {
                 self.osd(Info { title: label.unwrap_or(param), icon: osd::Icon::Speaker, level: Some(v), ..Default::default() });
             }
             Turn::Command { cmd } => sys::run(&cmd.replace("{value}", &format!("{}", (v * 100.0).round() as i32)))?,
+            Turn::Keys { up, down, steps } => {
+                let (mut n, anchor) = key_steps(self.step_anchor[i].unwrap_or(raw as f32), raw, steps);
+                self.step_anchor[i] = Some(anchor);
+                if c.invert {
+                    n = -n;
+                }
+                let key = if n > 0 { up } else { down };
+                if !key.trim().is_empty() {
+                    for _ in 0..n.unsigned_abs().min(32) {
+                        sys::send_keys(&key)?;
+                    }
+                }
+            }
             Turn::Brightness => {
                 let active = self.cfg.active.clone();
                 self.cfg.profiles.get_mut(&active).unwrap().lighting.brightness = (v * 100.0).clamp(0.0, 100.0) as u8;
@@ -1040,6 +1068,19 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn key_steps_count_whole_steps_only() {
+        // 25 steps over 0-255: one step every 10.2.
+        assert_eq!(key_steps(100.0, 105, 25).0, 0);
+        let (n, a) = key_steps(100.0, 111, 25);
+        assert_eq!(n, 1);
+        assert!((a - 110.2).abs() < 0.01);
+        // Jitter back across the step doesn't send the opposite key.
+        assert_eq!(key_steps(a, 109, 25).0, 0);
+        assert_eq!(key_steps(a, 99, 25).0, -1);
+        assert_eq!(key_steps(0.0, 255, 25).0, 25);
+    }
 
     #[test]
     fn mic_users_match() {
