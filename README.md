@@ -132,7 +132,7 @@ If an app's volume was changed somewhere else (like the Windows mixer), turning 
 - **Auto-switch:** a profile can turn on automatically while a chosen app (e.g. a game) is in front.
 - **Share:** *Settings > Export this profile* saves a `.pcpanel.json` file; *Import a profile file* adds one.
 - **Shift layer:** add *Shift: use another profile while held* under a knob's **Hold**. While you hold that knob, every other control does what it does in the other profile; let go and it's back. Under a press instead, it stays until you press that knob again.
-- **Profile slider** (Pro): *Settings > Profile slider* turns one slider into a profile switch. Its travel is shared between up to six profiles, bottom first, and its light fills up to where it is, so each profile has its own look: from no segments lit to all five.
+- **Profile slider** (Pro): *Settings > Profile slider* turns one slider into a profile switch. Its light fills up to where it is: the first profile you list is with no segments lit, the next with one lit, and so on, and the last one keeps the rest of the way up. Up to six profiles.
 - **Cheat sheet:** add *Show a cheat sheet of every control* to a button. Under Hold, an on-screen list of what every knob and slider does appears while you hold it; after a Shift action, it shows the other profile.
 
 ### Settings, self-test and backups
