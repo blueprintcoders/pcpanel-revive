@@ -11,9 +11,11 @@ It lives in your tray as a single ~2 MB exe using about 14 MB of RAM, with no me
 - **A live picture of your panel.** Turn a knob and it's selected; LEDs, positions and what each control drives are shown as they really are.
 - **Per-app volume with real app icons.** Pick apps from a list or point at a window. "Focused window" and "everything else" are special targets.
 - **No volume jumps.** If you changed a volume elsewhere, the dial takes over smoothly instead of snapping it.
-- **Notification lights.** For example, K2 pulses purple while Discord has an unread message.
-- **Audio meters.** Sliders light up with the sound of the app they control.
-- **Many button actions,** with press, double press and hold on every knob.
+- **Notification lights.** For example, K2 pulses purple while Discord has an unread message, or the logo turns red while any app is using your microphone.
+- **Music visualizer.** The whole panel dances to whatever is playing and flashes on the beat.
+- **More than volume.** Knobs can scroll, zoom, change brush size or dim your smart lights.
+- **Twice the controls.** Hold a knob for a second layer of functions, like a Shift key, or turn a slider into a profile switch.
+- **Many button actions,** with press, double press and hold on every knob, plus an on-screen cheat sheet of what everything does.
 - **Nothing lost.** It autosaves, has undo/redo and keeps automatic backups.
 - **Easy switch.** It imports your profiles from the official software in one click.
 
@@ -25,6 +27,7 @@ It lives in your tray as a single ~2 MB exe using about 14 MB of RAM, with no me
 2. **Quit the official PCPanel software** (right-click its tray icon > Exit). Only one app can talk to the panel at a time.
 3. **Run `pcpanel-revive.exe`.** A tray icon appears, and your panel is detected within a couple of seconds.
 4. **Left-click the tray icon** to open the settings. Right-click it for profiles, *Start with Windows* and *Quit*.
+5. **New to PCPanel?** Click **Quick setup** in the banner (or *Settings > Quick setup...*) for a ready-made layout: speakers, mic, the app in front, chat, music, browser and more, based on the apps on your PC. It's added as a new profile.
 
 > **"Windows protected your PC"?** The exe isn't code-signed yet, so SmartScreen may warn you the first time. Click **More info > Run anyway**.
 
@@ -53,6 +56,8 @@ Each control has:
   - a Voicemeeter parameter
   - a command
   - the panel's LED brightness
+  - **keystrokes as you turn:** one key or scroll step per step turned. Scroll a page, zoom (Ctrl + wheel), change brush size in Photoshop with `]` / `[`, or step through a video timeline.
+  - **a smart light dimmer:** sends the level to Home Assistant, Philips Hue or any web address as you turn. Pick *Start from: Home Assistant* or *Philips Hue* and fill in your address, token and light.
 - **When pressed** (knobs): a list of actions, each with a **▶** button to try it right away.
 - **Double press** and **Hold:** more actions on the same knob.
 - **Range & curve:** limit it to e.g. 20-80%, invert it, or use a logarithmic curve for finer control at low volume.
@@ -82,18 +87,19 @@ Type or paste exe names (`spotify`, `discord.exe`; commas work), or click **Pick
 |---|---|
 | Audio | Mute what the dial controls · Toggle app / device / microphone mute · Set or cycle the default device · Set an app or device to a preset volume · Focus mode (mute every app except some) · Send an app to a specific audio device |
 | Keyboard & apps | Keystroke or media key (or **record** a shortcut) · Run a program · Focus or open an app · Open a website, file or folder · Type text · Kill a process |
-| Profiles | Switch to a profile · Next profile |
+| Profiles | Switch to a profile · Next profile · Shift: use another profile while the knob is held |
 | OBS | Switch scene · Toggle a source's mute · Toggle recording / streaming |
 | Web & smart home | Web request (Home Assistant, webhooks...) with method, URL, headers and body |
 | System | Lock PC · Turn displays off/on (all, or chosen monitors) |
 | Voicemeeter | Run a Voicemeeter script |
-| Panel | Turn the panel lights on/off |
+| Panel | Turn the panel lights on/off · Show a cheat sheet of every control |
 
 ### Lighting
 
 ![Lighting presets](docs/screenshots/lighting.webp)
 
-- **Presets:** 10 ready-made looks. Click one to apply it to the current profile; Undo goes back.
+- **Presets:** 11 ready-made looks. Click one to apply it to the current profile; Undo goes back.
+- **Music visualizer:** everything dances to what your speakers play. On the Pro, the sliders show bass, low mids, high mids and treble; the knobs pulse with the same bands and flash on the beat; the logo follows the overall level. Choose rainbow colors or two colors of your own. It only listens to the speakers' output, and nothing is recorded.
 - **Per control:** static, gradient, fill with position, **meter** (pulses with the control's audio), or **real volume**.
 - **When muted:** turn a control's LED a color of your choice (e.g. red) while its app or device is muted.
 - **Whole panel:** single color, rainbow, wave or breath, plus the logo and slider labels on the Pro.
@@ -105,7 +111,9 @@ Light up, pulse or blink any knob ring, slider or the logo while an app wants yo
 ![Alerts](docs/screenshots/alerts.webp)
 
 - **When it flashes its taskbar button:** Discord, Teams, Slack, Telegram and most chat apps do this for new messages. For Discord, make sure *Settings > Notifications > Enable Taskbar Flashing* is on.
+- **When it shows a Windows notification:** for apps like Outlook or Teams that pop up a notification instead.
 - **When its window title contains...:** for apps that show an unread count like "(3)", or any text you choose.
+- **When it's using the microphone (on air):** leave the app empty to light up whenever any app is using a mic, e.g. during a call or a stream. **+ On-air light** adds one in a click.
 - **Clearing:** the alert clears when you switch to the app, or after the **Stop after** time.
 - **Preview 5 s:** shows it on your panel.
 - **Scope:** alerts apply to every profile.
@@ -123,6 +131,9 @@ If an app's volume was changed somewhere else (like the Windows mixer), turning 
 - Create, rename and delete profiles from the header, and switch between them from the tray, the header, or a knob button.
 - **Auto-switch:** a profile can turn on automatically while a chosen app (e.g. a game) is in front.
 - **Share:** *Settings > Export this profile...* saves a `.pcpanel.json` file; *Import a profile file...* adds one.
+- **Shift layer:** add *Shift: use another profile while held* under a knob's **Hold**. While you hold that knob, every other control does what it does in the other profile; let go and it's back. Under a press instead, it stays until you press that knob again.
+- **Profile slider** (Pro): *Settings > Profile slider* turns one slider into a profile switch. Its travel is split evenly between up to five profiles, bottom first, and its light fills up to where it is.
+- **Cheat sheet:** add *Show a cheat sheet of every control* to a button. Under Hold, an on-screen list of what every knob and slider does appears while you hold it; after a Shift action, it shows the other profile.
 
 ### Settings, self-test and backups
 
@@ -138,6 +149,7 @@ If an app's volume was changed somewhere else (like the Windows mixer), turning 
 - **Dials & buttons:** no-volume-jumps, double-press and hold timing, a deadband against slider twitch.
 - **Volume popup:** on/off and position.
 - **Backups:** snapshots are taken automatically (at most every 10 minutes, last 10 kept), with one-click Restore.
+- **Updates:** once a day the app checks GitHub for a new version. *Update now* (here or in the tray menu) downloads it, checks it against its published checksum, and restarts into it.
 
 ### PCPanel Mini and the original
 
