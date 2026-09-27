@@ -164,7 +164,7 @@ button.x.try{color:var(--acc)}
 .bk-time{min-width:200px}
 button.icon{width:34px;padding:5px 0;font-size:16px;line-height:1}
 button.icon:disabled{opacity:.35}
-#status{min-width:110px;text-align:right}
+#status{min-width:110px;max-width:280px;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .displays{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0}
 .row:has(> .displays)>label:first-child{align-self:flex-start;padding-top:2px}
 .editor .row>input:not([type]),.editor .row>.combo.free{flex:1;min-width:220px}
@@ -178,6 +178,10 @@ textarea{flex:1;min-width:220px;font:12px Consolas,monospace;color:var(--text);b
 .presets{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:10px}
 .preset{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;padding:10px;border-radius:10px;background:#202027}
 .preset:hover{border-color:var(--acc)}
+div.preset{border:1px solid var(--line);cursor:pointer}
+.preset-actions{display:flex;gap:12px;margin-top:2px}
+.presets-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.presets-head h2{margin:0;flex:1}
 .preset .hint{line-height:1.3}
 .pv-wrap{width:100%;margin-bottom:4px}
 .pv-dev{display:block;width:100%;height:auto;max-height:230px}
@@ -1047,7 +1051,7 @@ function presetSvg(pr) {
       s += `<rect class="led" style="--i:${KNOBS + k + seg}" x="${sx}" y="${330 + seg * 38}" width="18" height="32" rx="3" fill="${c}"/>`;
     }
     s += `<rect x="${x - 5}" y="326" width="10" height="194" rx="5" fill="#5c5e66"/><rect x="${x - 17}" y="${440 - 24}" width="34" height="48" rx="4" fill="#9a9da7"/>`;
-    const lbl = pr.labels === undefined ? hue(KNOBS + k) : pr.labels === 'match' ? a : pr.labels;
+    const lbl = pr.labelColors ? pr.labelColors[k] : pr.labels === undefined ? hue(KNOBS + k) : pr.labels === 'match' ? a : pr.labels;
     if (lbl) s += `<text class="led" style="--i:${KNOBS + k}" x="${left ? x - 30 : x + 30}" y="316" text-anchor="middle" font-size="30" font-weight="700" fill="${lbl}">S${k + 1}</text>`;
   }
   if (pro) {
@@ -1065,14 +1069,71 @@ function presetCard(pr) {
     h('b', {}, pr.name), h('span', {class: 'hint'}, pr.desc));
 }
 
+// ---- your own presets, saved from a profile's lighting ----
+const clone = x => JSON.parse(JSON.stringify(x));
+const presetNameFree = n => (cfg.looks || []).some(x => x.name === n) || PRESETS.some(x => x.name === n) ? 'There\'s already a preset with that name.' : '';
+async function saveLook() {
+  const name = await ask({title: 'Save as a preset', text: `Saves the lighting of "${cfg.active}": every light, the logo, brightness and the music visualizer.`,
+    value: '', ok: 'Save', check: presetNameFree});
+  if (!name) return;
+  const p = prof();
+  cfg.looks = cfg.looks || [];
+  // Mute colors belong to each control's job, so they aren't part of the look.
+  cfg.looks.push({name, lighting: clone(p.lighting), lights: p.controls.map(c => ({...clone(c.light), mute_color: ''})),
+    label_colors: p.controls.slice(KNOBS).map(c => c.label_color)});
+  touch(); render();
+  $('#status').textContent = `Saved "${name}"`;
+}
+function applyLook(lk) {
+  const p = prof();
+  p.lighting = clone(lk.lighting);
+  (lk.lights || []).forEach((x, i) => { if (p.controls[i]) p.controls[i].light = {...clone(x), mute_color: p.controls[i].light.mute_color}; });
+  (lk.label_colors || []).forEach((c, k) => { if (p.controls[KNOBS + k]) p.controls[KNOBS + k].label_color = c; });
+  touch(); render();
+  $('#status').textContent = `Applied ${lk.name} - Undo goes back`;
+}
+// A saved look in the shape presetSvg draws.
+function lookPreview(lk) {
+  const l = lk.lighting || {}, L = lk.lights || [];
+  const one = x => !x || x.mode === 'none' ? ['static', OFF] : [['meter', 'level'].includes(x.mode) ? 'volume' : x.mode, hex(x.color), hex(x.color2 || x.color)];
+  const pv = {name: lk.name, brightness: l.brightness ?? 80, knobs: L.slice(0, KNOBS).map(one), sliders: L.slice(KNOBS).map(one), labelColors: lk.label_colors, logo: l.logo};
+  if (l.mode === 'color') Object.assign(pv, {knobs: Array(5).fill(['static', l.color]), sliders: Array(4).fill(['static', l.color]), labelColors: Array(4).fill(l.color), logo: {mode: 'static', color: l.color}});
+  if (['rainbow', 'wave'].includes(l.mode)) Object.assign(pv, {mode: l.mode, knobs: undefined, sliders: undefined, labelColors: undefined, logo: undefined});
+  if (l.mode === 'breath') { const c = `hsl(${(l.hue || 0) * 1.41} 90% 55%)`; Object.assign(pv, {mode: 'breath', knobs: Array(5).fill(['static', c]), sliders: Array(4).fill(['static', c]), labelColors: Array(4).fill(c), logo: {mode: 'static', color: c}}); }
+  return pv;
+}
+function lookCard(lk, n) {
+  const swatch = h('div');
+  const pv = lookPreview(lk);
+  swatch.innerHTML = presetSvg(pv);
+  const stop = f => e => { e.stopPropagation(); f(); };
+  return h('div', {class: 'preset', role: 'button', tabindex: 0, title: 'Apply to this profile', onclick: () => applyLook(lk), onkeydown: e => { if (e.key === 'Enter') applyLook(lk); }},
+    h('div', {class: 'pv-wrap', style: `opacity:${0.45 + 0.55 * pv.brightness / 100}`}, swatch),
+    h('b', {}, lk.name),
+    h('div', {class: 'preset-actions'},
+      h('button', {class: 'link', onclick: stop(async () => {
+        const name = await ask({title: 'Rename preset', value: lk.name, ok: 'Rename', check: v => v === lk.name ? '' : presetNameFree(v)});
+        if (name && name !== lk.name) { lk.name = name; touch(); render(); }
+      })}, 'Rename'),
+      h('button', {class: 'link', onclick: stop(async () => {
+        if (await ask({title: `Delete "${lk.name}"?`, text: 'Profiles that use it keep their lighting. Undo brings the preset back.', ok: 'Delete', danger: true})) {
+          cfg.looks.splice(n, 1); touch(); render();
+        }
+      })}, 'Delete')));
+}
+
 function lightingTab() {
   if (!hasLights()) return h('div', {class: 'panel'}, h('h2', {}, 'Lighting'), h('div', {class: 'hint'}, 'The original wooden PCPanel has no lights, so there\'s nothing to set here.'));
   const l = prof().lighting;
   const box = h('div');
   const draw = () => {
     const anim = ['rainbow', 'wave', 'breath'].includes(l.mode);
-    const presets = h('div', {class: 'panel presets-panel'}, h('h2', {}, 'Presets'),
+    const looks = cfg.looks || [];
+    const presets = h('div', {class: 'panel presets-panel'},
+      h('div', {class: 'presets-head'}, h('h2', {}, 'Presets'), h('button', {onclick: saveLook}, 'Save this profile\'s lighting as a preset')),
       h('div', {class: 'hint'}, 'Click one to apply it to this profile. Mute colors are kept, and Undo takes it back.'),
+      looks.length ? [h('h2', {style: 'margin-top:14px'}, 'Your presets'), h('div', {class: 'presets'}, looks.map(lookCard)),
+        h('h2', {style: 'margin-top:18px'}, 'Built in')] : null,
       h('div', {class: 'presets'}, PRESETS.map(presetCard)));
     put(box, h('div', {class: 'light-layout'}, h('div', {},
       h('div', {class: 'panel'}, h('h2', {}, 'Lighting (this profile)'),

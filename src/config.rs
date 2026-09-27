@@ -33,6 +33,18 @@ pub struct Config {
     pub profile_slider: ProfileSlider,
     /// Look for a new version on GitHub once a day.
     pub update_check: bool,
+    /// Lighting presets saved from a profile; shared by every profile.
+    pub looks: Vec<Look>,
+}
+
+/// A profile's lighting saved as a preset: the panel-wide settings, each control's light, and the slider labels.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+#[serde(default)]
+pub struct Look {
+    pub name: String,
+    pub lighting: Lighting,
+    pub lights: Vec<Light>,
+    pub label_colors: Vec<String>,
 }
 
 /// Slide to switch profiles: the travel is split evenly between `profiles`, bottom first.
@@ -381,7 +393,7 @@ impl Default for Config {
         Config {
             active: "Default".into(), deadband: 1, apply_on_connect: false, double_press_ms: 300, hold_ms: 500, button_debounce_ms: 50,
             osd: true, osd_position: "bottom".into(), pickup: true, obs: Obs::default(), profiles, alerts: vec![],
-            profile_slider: ProfileSlider::default(), update_check: true,
+            profile_slider: ProfileSlider::default(), update_check: true, looks: vec![],
         }
     }
 }
@@ -518,6 +530,18 @@ mod tests {
         assert_eq!(Alert::light_index("s4"), Some(8));
         assert_eq!(Alert::light_index("logo"), Some(9));
         assert_eq!(Alert::light_index("k6"), None);
+    }
+
+    #[test]
+    fn saved_looks_load() {
+        // The shape the settings window saves.
+        let json = r##"{"looks": [{"name": "Mine", "lighting": {"mode": "custom", "brightness": 70, "viz_when": "playing"},
+            "lights": [{"mode": "static", "color": "#ff0000", "color2": "#ff0000", "mute_color": ""}], "label_colors": ["#ffffff"]}]}"##;
+        let cfg: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(cfg.looks[0].name, "Mine");
+        assert_eq!(cfg.looks[0].lighting.brightness, 70);
+        assert_eq!(cfg.looks[0].lighting.viz, "rainbow", "missing fields get defaults");
+        assert_eq!(cfg.looks[0].lights[0].color, "#ff0000");
     }
 
     #[test]
