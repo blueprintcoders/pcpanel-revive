@@ -796,7 +796,8 @@ impl Engine {
         if f.lighting.mode != "custom" {
             return f;
         }
-        for i in (0..CONTROLS).filter(|_| !viz) {
+        // Meter and real-volume lights still run on the lights the visualizer leaves alone.
+        for i in (0..CONTROLS).filter(|&i| !viz || !p.lighting.viz_on(i)) {
             let v = match p.controls[i].light.mode.as_str() {
                 "meter" => self.peaks[i],
                 "level" => self.levels[i].unwrap_or(0.0),

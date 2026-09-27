@@ -296,6 +296,15 @@ pub struct Lighting {
     pub viz_when: String,
     /// "playing": only these apps' audio starts it (empty = any app).
     pub viz_apps: Vec<String>,
+    /// Lights the visualizer takes over ("k1".."k5", "s1".."s4", "logo"); empty = all of them.
+    pub viz_lights: Vec<String>,
+}
+
+impl Lighting {
+    /// Does the visualizer drive this light (0-8 = controls, 9 = logo)?
+    pub fn viz_on(&self, led: usize) -> bool {
+        self.viz_lights.is_empty() || self.viz_lights.iter().any(|n| Alert::light_index(n) == Some(led))
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -333,7 +342,7 @@ impl Default for Lighting {
         Lighting {
             mode: "custom".into(), brightness: 80, color: "#00aaff".into(), hue: 0, speed: 100,
             anim_brightness: 255, reverse: false, bounce: false, vertical: false, logo: Logo::default(),
-            viz: "rainbow".into(), viz_low: "#2040ff".into(), viz_high: "#ff2d95".into(), viz_when: "off".into(), viz_apps: vec![],
+            viz: "rainbow".into(), viz_low: "#2040ff".into(), viz_high: "#ff2d95".into(), viz_when: "off".into(), viz_apps: vec![], viz_lights: vec![],
         }
     }
 }

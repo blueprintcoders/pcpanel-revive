@@ -128,6 +128,14 @@ pub fn paint(p: &Profile, f: &Frame, t: f32, knobs: usize) -> Profile {
     let logo = if rainbow { hsv_hex(t * 30.0, 1.0, 1.0) } else { l.viz_high.clone() };
     out.lighting.logo = Logo { mode: "static".into(), color: flash(scale_hex(&logo, 0.1 + 0.9 * f.level)), ..Logo::default() };
     out.lighting.mode = "custom".into();
+    // Lights the visualizer doesn't drive keep their usual look.
+    for i in (0..CONTROLS).filter(|&i| !l.viz_on(i)) {
+        out.controls[i].light = p.controls[i].light.clone();
+        out.controls[i].label_color = p.controls[i].label_color.clone();
+    }
+    if !l.viz_on(CONTROLS) {
+        out.lighting.logo = p.lighting.logo.clone();
+    }
     out
 }
 
@@ -194,6 +202,20 @@ mod tests {
         assert!(out.controls[..KNOBS].iter().all(|c| c.light.color == "#ff0000"), "every knob full red");
         let quiet = paint(&p, &Frame { bands: [1.0; 4], level: 0.0, glow: 0.0 }, 0.0, KNOBS);
         assert!(quiet.controls[..KNOBS].iter().all(|c| c.light.color == "#0f0000"), "every knob dim with a quiet mix");
+    }
+
+    #[test]
+    fn paints_only_the_chosen_lights() {
+        let mut cfg = crate::config::Config::default();
+        cfg.normalize();
+        let mut p = cfg.profile().clone();
+        p.lighting.viz_lights = vec!["s2".into(), "s3".into()];
+        let out = paint(&p, &Frame { bands: [1.0; 4], level: 1.0, glow: 0.0 }, 0.0, KNOBS);
+        assert_eq!(out.controls[0].light, p.controls[0].light, "K1 keeps its look");
+        assert_eq!(out.controls[5].light, p.controls[5].light, "S1 keeps its look");
+        assert_ne!(out.controls[6].light, p.controls[6].light, "S2 dances");
+        assert_ne!(out.controls[7].light, p.controls[7].light, "S3 dances");
+        assert_eq!(out.lighting.logo, p.lighting.logo, "logo keeps its look");
     }
 
     #[test]

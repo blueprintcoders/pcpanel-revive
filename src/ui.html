@@ -96,7 +96,7 @@ dialog::backdrop{background:#0009}
 .alert .ed-head{gap:10px}
 .alert .ed-head h2{font-size:16px}
 .alert-on input{width:18px;height:18px}
-.light-picks{display:flex;flex-wrap:wrap;gap:4px}
+.light-picks{display:flex;flex-wrap:wrap;gap:4px;flex:1;min-width:0}
 .light-picks .pick{min-width:44px;padding:4px 8px;font-size:12px}
 .light-picks .pick.on{background:var(--acc);border-color:var(--acc);color:#fff}
 .badge-live[hidden]{display:none}
@@ -1081,9 +1081,15 @@ function lightingTab() {
         ['rainbow', 'breath'].includes(l.logo.mode) ? [row('Speed', num(l.logo, 'speed', 0, 255)), row('Intensity', num(l.logo, 'brightness', 0, 255))] : null) : null,
       h('div', {class: 'panel'}, h('h2', {}, 'Music visualizer'),
         h('div', {class: 'hint'}, isPro()
-          ? 'Takes over the lights while it runs: the sliders show bass, low mids, high mids and treble, left to right; the knobs pulse with the same bands and flash on the beat, and the logo follows the overall level. Your lighting above comes back when it stops.'
-          : 'Takes over the lights while it runs: the knobs show bass, low mids, high mids and treble, and flash on the beat. Your lighting above comes back when it stops.'),
+          ? 'Takes over the lights you pick while it runs: the sliders show bass, low mids, high mids and treble, left to right; the knobs pulse with the same bands and flash on the beat, and the logo follows the overall level. Your lighting above comes back when it stops.'
+          : 'Takes over the lights you pick while it runs: the knobs show bass, low mids, high mids and treble, and flash on the beat. Your lighting above comes back when it stops.'),
         row('Show it', select(l, 'viz_when', {off: 'Off', playing: 'While audio is playing', always: 'All the time'}, draw)),
+        l.viz_when && l.viz_when !== 'off' ? row('Lights', h('div', {class: 'light-picks'},
+          h('button', {class: 'pick' + (!(l.viz_lights || []).length ? ' on' : ''), onclick: () => { l.viz_lights = []; touch(); draw(); }}, 'All'),
+          (isPro() ? LIGHTS : LIGHTS.slice(0, 4)).map(k => h('button', {class: 'pick' + ((l.viz_lights || []).includes(k) ? ' on' : ''), onclick: () => {
+            const cur = l.viz_lights || [];
+            l.viz_lights = cur.includes(k) ? cur.filter(x => x !== k) : [...cur, k]; touch(); draw();
+          }}, k === 'logo' ? 'Logo' : k.toUpperCase())))) : null,
         row('Presets', h('div', {class: 'viz-chips'}, VIZ_PRESETS.map(vp => vizChip(l, vp, draw)))),
         l.viz_when === 'playing' ? [row('Only for', appChips(l, 'viz_apps')),
           h('div', {class: 'hint indent'}, 'Leave empty to start for any app. Add apps (e.g. Spotify) so only their audio starts it, not a video call or game. Windows sounds never count.')] : null,
