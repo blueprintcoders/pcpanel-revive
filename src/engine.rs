@@ -18,6 +18,8 @@ const FRAME: Duration = Duration::from_millis(50);
 const PREVIEW: Duration = Duration::from_secs(5);
 /// Frame time while the music visualizer runs.
 const VIZ_FRAME: Duration = Duration::from_millis(33);
+/// A control moved while the visualizer drives its light shows its position for this long.
+const SHOW_POSITION: Duration = Duration::from_millis(1500);
 /// Pickup: how close the control must get to the current volume to take over.
 const PICKUP_WINDOW: f32 = 0.03;
 /// Pickup: a volume that moved this far from what we last set was changed elsewhere.
@@ -97,6 +99,8 @@ struct Engine {
     /// "While audio is playing": audio was heard recently enough to keep the visualizer on.
     playing: bool,
     playing_until: Option<Instant>,
+    /// When each control was last moved by hand, until its light goes back to the visualizer.
+    moved_until: [Option<Instant>; CONTROLS],
 }
 
 pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Box<dyn Fn(u32)>) {
@@ -108,7 +112,7 @@ pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Bo
     let http = http_worker(shared.clone());
     let mut e = Engine {
         cfg, shared, post, audio, obs: Obs::default(), http, shift: None, pressing: Press::Single, slider_seg: None,
-        sheet_knob: None, sheet_until: None, viz: None, viz_frame: viz::Frame::default(), viz_buf: vec![], viz_retry: None, playing: false, playing_until: None,
+        sheet_knob: None, sheet_until: None, viz: None, viz_frame: viz::Frame::default(), viz_buf: vec![], viz_retry: None, playing: false, playing_until: None, moved_until: [None; CONTROLS],
         sent: [None; CONTROLS], pending: [None; CONTROLS], last_cmd: [None; CONTROLS], muted: [false; CONTROLS],
         press_deadline: [None; KNOBS], hold_deadline: [None; KNOBS], hold_fired: [false; KNOBS], debounce: [Debounce::default(); KNOBS],
         engaged: [false; CONTROLS], last_set: [None; CONTROLS], side: [None; CONTROLS], force_sync: [false; CONTROLS], step_anchor: [None; CONTROLS],
@@ -461,6 +465,20 @@ fn lit(v: i32) -> usize {
     ((v.clamp(0, 255) as f32 / 51.0).round() as usize).min(5)
 }
 
+/// A light that shows the control's position, in its usual colors: a slider fills up to where it is,
+/// a knob ring goes from dim to bright as it turns.
+fn position_light(l: &Light, slider: bool) -> Light {
+    let c1 = if l.color.is_empty() || l.mode == "none" { "#ffffff".to_string() } else { l.color.clone() };
+    let two = matches!(l.mode.as_str(), "gradient" | "volume" | "level" | "meter") && !l.color2.is_empty();
+    let c2 = if two { l.color2.clone() } else { c1.clone() };
+    let (mode, color) = match slider {
+        true => ("volume", c1),
+        false if two => ("gradient", c1),
+        false => ("gradient", scale_hex(&c1, 0.08)),
+    };
+    Light { mode: mode.into(), color, color2: c2, mute_color: String::new() }
+}
+
 /// Which of `n` profiles (up to five) a slider position picks: the first up to one segment lit (the
 /// very bottom counts as one), the next with two, and so on; the last profile keeps the rest of the way
 /// up. Going up, the profile changes exactly as the next segment lights. Going down, it holds on a few
@@ -525,6 +543,9 @@ impl Engine {
                         self.slider_pick(value);
                     }
                     return;
+                }
+                if !initial {
+                    self.moved_until[index] = Some(Instant::now() + SHOW_POSITION);
                 }
                 if self.testing() {
                     self.sent[index] = Some(value);
@@ -795,6 +816,11 @@ impl Engine {
         };
         if f.lighting.mode != "custom" {
             return f;
+        }
+        // A control being moved shows where it is, not the music, for a moment.
+        let now = Instant::now();
+        for i in (0..CONTROLS).filter(|&i| viz && p.lighting.viz_on(i) && self.moved_until[i].is_some_and(|t| now < t)) {
+            f.controls[i].light = position_light(&p.controls[i].light, i >= KNOBS);
         }
         // Meter and real-volume lights still run on the lights the visualizer leaves alone.
         for i in (0..CONTROLS).filter(|&i| !viz || !p.lighting.viz_on(i)) {
@@ -1402,6 +1428,16 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn position_lights() {
+        let s = position_light(&Light { mode: "static".into(), color: "#00ff00".into(), color2: String::new(), mute_color: String::new() }, true);
+        assert_eq!((s.mode.as_str(), s.color.as_str(), s.color2.as_str()), ("volume", "#00ff00", "#00ff00"), "slider fills in its color");
+        let k = position_light(&Light { mode: "static".into(), color: "#ff0000".into(), color2: String::new(), mute_color: String::new() }, false);
+        assert_eq!((k.mode.as_str(), k.color.as_str(), k.color2.as_str()), ("gradient", "#140000", "#ff0000"), "knob dim to bright");
+        let g = position_light(&Light { mode: "gradient".into(), color: "#0000ff".into(), color2: "#ff00ff".into(), mute_color: String::new() }, false);
+        assert_eq!((g.color.as_str(), g.color2.as_str()), ("#0000ff", "#ff00ff"), "a two-color knob keeps its colors");
+    }
 
     #[test]
     fn cheat_sheet_rows() {
