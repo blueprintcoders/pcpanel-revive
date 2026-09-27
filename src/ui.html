@@ -1045,30 +1045,37 @@ function alertsTab() {
     cfg.alerts.map((a, n) => h('div', {class: 'editor alert' + (a.enabled ? '' : ' off')},
       h('div', {class: 'ed-head'},
         h('label', {class: 'alert-on', title: 'On/off'}, h('input', {type: 'checkbox', checked: a.enabled, onchange: e => { a.enabled = e.target.checked; touch(); draw(); drawDevice(); }})),
-        h('h2', {}, a.app ? appLook(normExe(a.app)).name : 'New alert'),
+        h('h2', {}, a.app ? appLook(normExe(a.app)).name : a.trigger === 'mic' ? 'On air' : 'New alert'),
         h('span', {class: 'spacer'}),
         h('span', {class: 'badge-live', 'data-n': n, hidden: !alertsOn[n]}, 'Showing now'),
         h('button', {onclick: () => fetch('/api/alert-preview', {method: 'POST', headers: {'X-PCP': '1'}, body: String(n)})}, 'Preview 5 s'),
         h('button', {class: 'x', title: 'Delete alert', onclick: () => { cfg.alerts.splice(n, 1); touch(); draw(); drawDevice(); }}, '×')),
       row('App', appOne(a, 'app')),
-      row('When', select(a, 'trigger', {flash: 'It flashes its taskbar button (new message)', notification: 'It shows a Windows notification', title: 'Its window title contains...'}, draw)),
+      a.trigger === 'mic' ? h('div', {class: 'hint indent'}, 'Leave empty to light up whenever any app is using a microphone.') : null,
+      row('When', select(a, 'trigger', {flash: 'It flashes its taskbar button (new message)', notification: 'It shows a Windows notification', title: 'Its window title contains...',
+        mic: 'It\'s using the microphone (on air)'}, draw)),
       a.trigger === 'notification' ? [row('Source', comboFree(() => a.pattern || '', v => { a.pattern = v; touch(); }, notifSources.map(v => ({value: v, label: v})), {placeholder: 'automatic, from the app name'})),
         h('div', {class: 'hint indent'}, 'Lights on each new notification from this app; clears when you open the app or dismiss its notifications. If it doesn\'t fire, pick the app\'s entry under Source.')] : null,
       a.trigger === 'title' ? row('Text', h('input', {value: a.pattern || '', placeholder: 'leave empty for an unread count like (3)', oninput: e => { a.pattern = e.target.value; touch(); }})) : null,
       row('Lights', h('div', {class: 'light-picks'}, (isPro() ? LIGHTS : LIGHTS.slice(0, 4)).map(k => h('button', {class: 'pick' + ((a.lights || []).includes(k) ? ' on' : ''), onclick: () => {
         a.lights = (a.lights || []).includes(k) ? a.lights.filter(x => x !== k) : [...(a.lights || []), k]; touch(); draw(); drawDevice();
       }}, k === 'logo' ? 'Logo' : k.toUpperCase())))),
-      row('Stop after', num(a, 'timeout_min', 0, 1440), h('span', {class: 'hint'}, 'minutes (0 = keep going until you open the app)')),
+      row('Stop after', num(a, 'timeout_min', 0, 1440), h('span', {class: 'hint'}, a.trigger === 'mic' ? 'minutes (0 = for as long as the mic is in use)' : 'minutes (0 = keep going until you open the app)')),
       row('Effect', select(a, 'effect', {pulse: 'Pulse', blink: 'Blink', solid: 'Solid'}, () => { draw(); drawDevice(); }), color(a, 'color'),
         h('span', {class: 'hint'}, 'every'), num(a, 'period_ms', 200, 10000, 100), h('span', {class: 'hint'}, 'ms')))),
     h('button', {class: 'link', onclick: () => {
       cfg.alerts.push({enabled: true, app: '', trigger: 'flash', pattern: '', lights: [isPro() ? 'logo' : 'k1'], effect: 'pulse', color: '#5865f2', period_ms: 1200, timeout_min: 0});
       touch(); draw();
-    }}, '+ Add alert'),
+    }}, '+ Add alert'), ' ',
+    h('button', {class: 'link', onclick: () => {
+      cfg.alerts.push({enabled: true, app: '', trigger: 'mic', pattern: '', lights: [isPro() ? 'logo' : 'k1'], effect: 'solid', color: '#ff1a1a', period_ms: 1200, timeout_min: 0});
+      touch(); draw(); drawDevice();
+    }}, '+ On-air light (mic in use)'),
     h('div', {class: 'hint', style: 'margin-top:14px'},
       'Taskbar flash works for Discord (Settings > Notifications > Enable Taskbar Flashing), Teams, Slack, Telegram and most chat apps. ',
       'Windows notification works for apps that pop up a notification instead, like Outlook or Teams. ',
       'The light stops when you switch to the app. Title works for apps that show an unread count in their window title. ',
+      'On air uses the same information as the microphone icon in the Windows taskbar, so it works with every app. ',
       'Alerts apply to every profile. While one shows, rainbow/wave/breath lighting is imitated so only the alert LEDs change.'));
   draw();
   return h('div', {class: 'ctl-layout'},

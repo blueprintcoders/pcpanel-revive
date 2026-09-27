@@ -38,7 +38,8 @@ pub struct Alert {
     pub enabled: bool,
     pub app: String,
     /// "flash" (taskbar button flashes) | "title" (window title matches `pattern`) |
-    /// "notification" (a new Windows notification; `pattern` optionally names its source)
+    /// "notification" (a new Windows notification; `pattern` optionally names its source) |
+    /// "mic" (the app, or any app when `app` is empty, is using a microphone)
     pub trigger: String,
     /// For "title": text to look for; empty = an unread count like "(3)".
     pub pattern: String,

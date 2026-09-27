@@ -320,6 +320,25 @@ pub fn monitor_off() -> Result<(), String> {
     Ok(())
 }
 
+/// Apps using a microphone right now (lowercase exe names, or Store app ids), read from the same
+/// records Windows uses for its "microphone in use" icon.
+pub fn mic_users() -> Vec<String> {
+    const BASE: &str = r"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone";
+    let mut out = vec![];
+    for (path, desktop) in [(BASE.to_string(), false), (format!(r"{BASE}\NonPackaged"), true)] {
+        let Ok(key) = windows_registry::CURRENT_USER.open(&path) else { continue };
+        let Ok(names) = key.keys() else { continue };
+        for name in names.filter(|n| desktop || n != "NonPackaged") {
+            let Ok(app) = key.open(&name) else { continue };
+            if app.get_u64("LastUsedTimeStop").is_ok_and(|t| t == 0) && app.get_u64("LastUsedTimeStart").is_ok_and(|t| t > 0) {
+                // Desktop apps are stored as their path, with # in place of \.
+                out.push(name.rsplit('#').next().unwrap_or(&name).to_lowercase());
+            }
+        }
+    }
+    out
+}
+
 /// Processes of the official PCPanel software (it runs as javaw.exe + sndctrl.exe from its install folder).
 pub fn official_app_pids() -> Vec<u32> {
     let mut pids = vec![0u32; 4096];

@@ -283,6 +283,12 @@ fn norm(app: &str) -> String {
     if a.contains('.') || matches!(a.as_str(), "focused" | "system" | "unmapped" | "") { a } else { a + ".exe" }
 }
 
+/// Is a microphone in use by this app (or by any app, for an empty `exe`)?
+fn mic_matches(users: &[String], exe: &str) -> bool {
+    let stem = exe.trim_end_matches(".exe");
+    users.iter().any(|u| exe.is_empty() || u == exe || (!stem.is_empty() && u.contains(stem)))
+}
+
 /// Pickup decision. Returns true when the control should drive the volume now.
 /// `side` remembers which side of the current volume the control was on, so a fast sweep across it still engages.
 fn picks_up(target: f32, current: f32, side: &mut Option<f32>) -> bool {
@@ -506,9 +512,12 @@ impl Engine {
         self.alert_since.resize(n_alerts, None);
         self.alert_expired.resize(n_alerts, false);
         let mut on = vec![false; n_alerts];
+        let mic = self.cfg.alerts.iter().any(|a| a.enabled && a.trigger == "mic").then(sys::mic_users).unwrap_or_default();
         for (n, a) in self.cfg.alerts.iter().enumerate() {
             let exe = norm(&a.app);
-            let raw = a.enabled && !exe.is_empty() && match a.trigger.as_str() {
+            let raw = a.enabled && match a.trigger.as_str() {
+                "mic" => mic_matches(&mic, &exe),
+                _ if exe.is_empty() => false,
                 "title" => sys::window_titles(&exe).iter().any(|t| a.title_matches(t)),
                 "notification" => self.notified.contains(&exe),
                 _ => self.flashing.contains(&exe),
@@ -532,7 +541,8 @@ impl Engine {
         for (n, a) in self.cfg.alerts.iter().enumerate() {
             let (was, now) = (self.alerts_on.get(n).copied().unwrap_or(false), on[n]);
             if was != now && self.preview.is_none_or(|(p, _)| p != n) && !(was && self.alert_expired[n]) {
-                log(&self.shared, format!("alert {}: {}", if now { "on" } else { "off" }, a.app));
+                let who = if a.app.is_empty() { "microphone in use" } else { &a.app };
+                log(&self.shared, format!("alert {}: {who}", if now { "on" } else { "off" }));
             }
         }
         if changed && !on.iter().any(|&x| x) {
@@ -1030,6 +1040,16 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mic_users_match() {
+        let users = vec!["discord.exe".to_string(), "microsoft.windowssoundrecorder_8wekyb3d8bbwe".to_string()];
+        assert!(mic_matches(&users, ""), "no app = any app");
+        assert!(mic_matches(&users, "discord.exe"));
+        assert!(mic_matches(&users, "windowssoundrecorder.exe"), "Store apps match by name");
+        assert!(!mic_matches(&users, "zoom.exe"));
+        assert!(!mic_matches(&[], ""));
+    }
 
     #[test]
     fn norm_names() {

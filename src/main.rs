@@ -298,7 +298,6 @@ fn settings() {
 #[cfg(test)]
 mod tests {
     #[test]
-    #[test]
     #[ignore]
     fn dump_icon() {
         std::fs::write(std::env::var("ICON_OUT").unwrap(), super::icon_rgba()).unwrap();
@@ -321,11 +320,10 @@ mod tests {
     fn icon_is_centered() {
         // Alpha-weighted centroid of the non-tile (dot) pixels sits on the tile center.
         let px = super::icon_rgba();
-        let (mut sx, mut sy, mut n) = (0.0, 0.0, 0.0);
+        let (mut sx, mut n) = (0.0, 0.0);
         for (i, p) in px.chunks(4).enumerate() {
             if p[3] == 255 && (p[0], p[1], p[2]) != (34, 34, 40) {
                 sx += (i % 32) as f64 + 0.5;
-                sy += (i / 32) as f64 + 0.5;
                 n += 1.0;
             }
         }
