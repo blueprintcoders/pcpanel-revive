@@ -11,6 +11,7 @@ mod obs;
 mod shellhook;
 mod osd;
 mod sys;
+mod viz;
 mod web;
 
 use config::{Config, CONTROLS, KNOBS};

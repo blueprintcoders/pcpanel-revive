@@ -157,6 +157,26 @@ impl Audio {
         out
     }
 
+    /// Start capturing what the default output device plays (for the music visualizer).
+    pub fn loopback(&self) -> R<Loopback> {
+        unsafe {
+            let dev = self.en.GetDefaultAudioEndpoint(eRender, eConsole)?;
+            let id = dev.GetId()?;
+            let device = id.to_string().unwrap_or_default();
+            CoTaskMemFree(Some(id.0 as _));
+            let client: IAudioClient = dev.Activate(CLSCTX_ALL, None)?;
+            let fmt = client.GetMixFormat()?;
+            let (channels, rate, bits) = ((*fmt).nChannels.max(1) as usize, (*fmt).nSamplesPerSec as f32, (*fmt).wBitsPerSample);
+            // 200 ms buffer, read about 30 times a second.
+            let init = client.Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK, 2_000_000, 0, fmt, None);
+            CoTaskMemFree(Some(fmt as _));
+            init?;
+            let capture: IAudioCaptureClient = client.GetService()?;
+            client.Start()?;
+            Ok(Loopback { client, capture, channels, float: bits == 32, rate, device })
+        }
+    }
+
     /// Process ids with a live audio session on any playback device.
     pub fn session_pids(&self) -> Vec<u32> {
         self.sessions().into_iter().map(|s| s.pid).filter(|&p| p != 0).collect()
@@ -175,6 +195,48 @@ impl Session {
     }
     pub fn set_mute(&self, m: bool) {
         unsafe { let _ = self.vol.SetMute(m, std::ptr::null()); }
+    }
+}
+
+/// A running capture of what an output device plays. Shared-mode audio is 32-bit float in practice; 16-bit is handled too.
+pub struct Loopback {
+    client: IAudioClient,
+    capture: IAudioCaptureClient,
+    channels: usize,
+    float: bool,
+    pub rate: f32,
+    /// The device's id, to notice when the default output changes.
+    pub device: String,
+}
+
+impl Loopback {
+    /// Append everything captured since the last call, mixed down to mono.
+    pub fn read(&self, out: &mut Vec<f32>) -> R<()> {
+        unsafe {
+            while self.capture.GetNextPacketSize()? > 0 {
+                let (mut data, mut frames, mut flags) = (std::ptr::null_mut(), 0u32, 0u32);
+                self.capture.GetBuffer(&mut data, &mut frames, &mut flags, None, None)?;
+                let silent = flags & AUDCLNT_BUFFERFLAGS_SILENT.0 as u32 != 0 || data.is_null();
+                let n = frames as usize * self.channels;
+                if silent {
+                    out.extend(std::iter::repeat_n(0.0, frames as usize));
+                } else if self.float {
+                    let s = std::slice::from_raw_parts(data as *const f32, n);
+                    out.extend(s.chunks(self.channels).map(|c| c.iter().sum::<f32>() / self.channels as f32));
+                } else {
+                    let s = std::slice::from_raw_parts(data as *const i16, n);
+                    out.extend(s.chunks(self.channels).map(|c| c.iter().map(|&v| v as f32 / 32768.0).sum::<f32>() / self.channels as f32));
+                }
+                self.capture.ReleaseBuffer(frames)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Drop for Loopback {
+    fn drop(&mut self) {
+        unsafe { let _ = self.client.Stop(); }
     }
 }
 

@@ -4,7 +4,7 @@ use crate::config::{self, Action, Alert, Config, Light, Logo, Profile, Turn, CON
 use windows::Win32::Media::Audio::Endpoints::IAudioMeterInformation;
 use crate::hid::{self, Event};
 use crate::osd::{self, Info};
-use crate::{log, obs::Obs, sys, Msg, Shared, WM_OSD, WM_REFRESH};
+use crate::{log, obs::Obs, sys, viz, Msg, Shared, WM_OSD, WM_REFRESH};
 use serde_json::json;
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
@@ -16,6 +16,8 @@ const CMD_INTERVAL: Duration = Duration::from_millis(150);
 /// Frame time while an alert animates the LEDs.
 const FRAME: Duration = Duration::from_millis(50);
 const PREVIEW: Duration = Duration::from_secs(5);
+/// Frame time while the music visualizer runs.
+const VIZ_FRAME: Duration = Duration::from_millis(33);
 /// Pickup: how close the control must get to the current volume to take over.
 const PICKUP_WINDOW: f32 = 0.03;
 /// Pickup: a volume that moved this far from what we last set was changed elsewhere.
@@ -87,6 +89,11 @@ struct Engine {
     /// Cheat sheet: the knob holding it open, or until when a press shows it.
     sheet_knob: Option<usize>,
     sheet_until: Option<Instant>,
+    /// Music visualizer: the speaker capture and its analysis, the latest frame, and when to retry after a failure.
+    viz: Option<(audio::Loopback, viz::Analyzer)>,
+    viz_frame: viz::Frame,
+    viz_buf: Vec<f32>,
+    viz_retry: Option<Instant>,
 }
 
 pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Box<dyn Fn(u32)>) {
@@ -98,7 +105,7 @@ pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Bo
     let http = http_worker(shared.clone());
     let mut e = Engine {
         cfg, shared, post, audio, obs: Obs::default(), http, shift: None, pressing: Press::Single, slider_seg: None,
-        sheet_knob: None, sheet_until: None,
+        sheet_knob: None, sheet_until: None, viz: None, viz_frame: viz::Frame::default(), viz_buf: vec![], viz_retry: None,
         sent: [None; CONTROLS], pending: [None; CONTROLS], last_cmd: [None; CONTROLS], muted: [false; CONTROLS],
         press_deadline: [None; KNOBS], hold_deadline: [None; KNOBS], hold_fired: [false; KNOBS], debounce: [Debounce::default(); KNOBS],
         engaged: [false; CONTROLS], last_set: [None; CONTROLS], side: [None; CONTROLS], force_sync: [false; CONTROLS], step_anchor: [None; CONTROLS],
@@ -143,12 +150,13 @@ pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Bo
         }
         if e.animating() && Instant::now() >= next_frame {
             e.sample_meters();
+            e.sample_viz();
             if e.preview.is_some_and(|(_, until)| Instant::now() >= until) && e.update_alerts() && !e.animating() {
                 e.relight(); // preview ended: restore the normal lighting once
             } else {
                 e.relight();
             }
-            next_frame = Instant::now() + FRAME;
+            next_frame = Instant::now() + if e.viz_on() { VIZ_FRAME } else { FRAME };
         }
     }
 }
@@ -225,7 +233,7 @@ fn alert_profile(p: &Profile, alerts: &[Alert], on: &[bool], t: f32) -> Profile 
 
 /// A light driven by a live level (audio peak or real volume), as plain colors the panel understands.
 /// Slider strips only take two colors, so the level fills bottom-first: the top half lights past 50%.
-fn live_light(l: &Light, v: f32, slider: bool) -> Light {
+pub(crate) fn live_light(l: &Light, v: f32, slider: bool) -> Light {
     let v = v.clamp(0.0, 1.0);
     let (color, color2) = if slider {
         (scale_hex(&l.color, (2.0 * v).min(1.0)), scale_hex(&l.color2, (2.0 * v - 1.0).max(0.0)))
@@ -239,7 +247,7 @@ fn live_light(l: &Light, v: f32, slider: bool) -> Light {
     Light { mode: if slider { "gradient" } else { "static" }.into(), color, color2, mute_color: l.mute_color.clone() }
 }
 
-fn mix_hex(a: &str, b: &str, t: f32) -> String {
+pub(crate) fn mix_hex(a: &str, b: &str, t: f32) -> String {
     let p = |h: &str, i: usize| h.trim_start_matches('#').get(i..i + 2).and_then(|x| u8::from_str_radix(x, 16).ok()).unwrap_or(0) as f32;
     let c = |i| (p(a, i) + (p(b, i) - p(a, i)) * t.clamp(0.0, 1.0)) as u8;
     format!("#{:02x}{:02x}{:02x}", c(0), c(2), c(4))
@@ -294,7 +302,7 @@ impl Debounce {
     }
 }
 
-fn hsv_hex(h: f32, s: f32, v: f32) -> String {
+pub(crate) fn hsv_hex(h: f32, s: f32, v: f32) -> String {
     let c = v * s;
     let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
     let (r, g, b) = match (h.rem_euclid(360.0) / 60.0) as u32 {
@@ -304,7 +312,7 @@ fn hsv_hex(h: f32, s: f32, v: f32) -> String {
     format!("#{:02x}{:02x}{:02x}", ((r + m) * 255.0) as u8, ((g + m) * 255.0) as u8, ((b + m) * 255.0) as u8)
 }
 
-fn scale_hex(hex: &str, k: f32) -> String {
+pub(crate) fn scale_hex(hex: &str, k: f32) -> String {
     let h = hex.trim_start_matches('#');
     let p = |i: usize| h.get(i..i + 2).and_then(|x| u8::from_str_radix(x, 16).ok()).unwrap_or(0) as f32 * k.clamp(0.0, 1.0);
     format!("#{:02x}{:02x}{:02x}", p(0) as u8, p(2) as u8, p(4) as u8)
@@ -646,7 +654,39 @@ impl Engine {
     }
 
     fn animating(&self) -> bool {
-        self.alerts_on.iter().any(|&on| on) || (self.connected && !self.meters.is_empty() && self.light_test.is_none())
+        self.alerts_on.iter().any(|&on| on) || (self.connected && !self.meters.is_empty() && self.light_test.is_none()) || self.viz_on()
+    }
+
+    fn viz_on(&self) -> bool {
+        self.connected && self.light_test.is_none() && self.cfg.profile().lighting.mode == "visualizer"
+    }
+
+    /// Music visualizer: read what's playing since the last frame and analyze it.
+    fn sample_viz(&mut self) {
+        if !self.viz_on() {
+            self.viz = None;
+            return;
+        }
+        if self.viz.is_none() && self.viz_retry.is_none_or(|t| Instant::now() >= t) {
+            match self.audio.loopback() {
+                Ok(lb) => {
+                    let analyzer = viz::Analyzer::new(lb.rate);
+                    self.viz = Some((lb, analyzer));
+                }
+                Err(e) => {
+                    self.viz_retry = Some(Instant::now() + Duration::from_secs(5));
+                    log(&self.shared, format!("visualizer: can't listen to the speakers: {}", e.message()));
+                }
+            }
+        }
+        let Some((lb, analyzer)) = &mut self.viz else { return };
+        self.viz_buf.clear();
+        let ok = lb.read(&mut self.viz_buf).is_ok();
+        if ok {
+            self.viz_frame = analyzer.feed(&self.viz_buf);
+        } else {
+            self.viz = None; // the device went away; reopen on the next frame
+        }
     }
 
     /// New Windows notifications from apps that have a "notification" alert.
@@ -704,11 +744,17 @@ impl Engine {
 
     /// Profile with "pulse with audio" and "follow the volume" lights resolved to plain colors.
     fn live_frame(&self, p: &Profile) -> Profile {
-        let mut f = p.clone();
-        if p.lighting.mode != "custom" {
+        let viz = p.lighting.mode == "visualizer";
+        let mut f = if viz {
+            let knobs = crate::lock(&self.shared).model.buttons();
+            viz::paint(p, &self.viz_frame, self.anim_t0.elapsed().as_secs_f32(), knobs)
+        } else {
+            p.clone()
+        };
+        if f.lighting.mode != "custom" {
             return f;
         }
-        for i in 0..CONTROLS {
+        for i in (0..CONTROLS).filter(|_| !viz) {
             let v = match p.controls[i].light.mode.as_str() {
                 "meter" => self.peaks[i],
                 "level" => self.levels[i].unwrap_or(0.0),
@@ -1296,6 +1342,12 @@ impl Engine {
         }
         if self.refresh_mutes() {
             self.relight();
+        }
+        // The visualizer follows the default output device.
+        if let Some((lb, _)) = &self.viz {
+            if !self.viz_on() || self.audio.default_id(false).is_some_and(|id| id != lb.device) {
+                self.viz = None;
+            }
         }
         let m = mtime();
         if m.is_some() && m != self.cfg_mtime {

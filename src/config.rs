@@ -256,7 +256,7 @@ pub struct Light {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(default)]
 pub struct Lighting {
-    /// custom | color | rainbow | wave | breath
+    /// custom | color | rainbow | wave | breath | visualizer
     pub mode: String,
     pub brightness: u8, // 0-100, global
     pub color: String,
@@ -267,6 +267,9 @@ pub struct Lighting {
     pub bounce: bool,
     pub vertical: bool,
     pub logo: Logo,
+    /// Visualizer colors: "rainbow", or "colors" (`color` when quiet to `color2` when loud).
+    pub viz: String,
+    pub color2: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -304,6 +307,7 @@ impl Default for Lighting {
         Lighting {
             mode: "custom".into(), brightness: 80, color: "#00aaff".into(), hue: 0, speed: 100,
             anim_brightness: 255, reverse: false, bounce: false, vertical: false, logo: Logo::default(),
+            viz: "rainbow".into(), color2: "#ff2d95".into(),
         }
     }
 }

@@ -184,6 +184,9 @@ textarea{flex:1;min-width:220px;font:12px Consolas,monospace;color:var(--text);b
 .pv-logo{position:absolute;left:50%;bottom:6px;width:10px;height:5px;border-radius:2px}
 .pv-wave{height:64px;border-radius:8px;background:linear-gradient(90deg,#ff3b30,#ffcc00,#34c759,#00c7be,#007aff,#af52de,#ff3b30);background-size:200% 100%;animation:pvwave 4s linear infinite}
 @keyframes pvwave{to{background-position:200% 0}}
+.pv-wave.pv-viz{animation:pvwave 1.5s linear infinite,vizpulse .45s ease-in-out infinite alternate}
+#device svg.anim-visualizer .led{animation:vizpulse .45s ease-in-out infinite alternate;animation-delay:calc(var(--i) * -.17s)}
+@keyframes vizpulse{from{opacity:.35}to{opacity:1}}
 #selftest{width:min(620px,94vw)}
 .st{padding:16px 18px 18px}
 .st-head{display:flex;align-items:center;gap:12px;margin-bottom:6px}
@@ -953,6 +956,8 @@ const PRESETS = [
     logo: {mode: 'rainbow', speed: 100, brightness: 255}},
   {name: 'Rainbow Wave', desc: 'A rainbow that rolls across the whole panel', brightness: 90, mode: 'wave',
     wave: {hue: 0, speed: 140, anim_brightness: 255, reverse: false, bounce: false}},
+  {name: 'Party', desc: 'Every light dances to whatever is playing, and flashes on the beat', brightness: 100, mode: 'visualizer',
+    wave: {viz: 'rainbow'}},
 ];
 function applyPreset(pr) {
   const p = prof(), l = p.lighting;
@@ -975,7 +980,7 @@ function applyPreset(pr) {
 }
 function presetCard(pr) {
   const swatch = pr.mode
-    ? h('div', {class: 'pv-wave'})
+    ? h('div', {class: 'pv-wave' + (pr.mode === 'visualizer' ? ' pv-viz' : '')})
     : h('div', {class: 'pv'},
         h('div', {class: 'pv-knobs'}, [pr.knobs.slice(0, 2), pr.knobs.slice(2)].map(r => h('div', {}, r.map(([m, a, b]) =>
           h('i', {style: `background:${m === 'gradient' ? `linear-gradient(135deg,${a},${b})` : a}`}))))),
@@ -996,7 +1001,14 @@ function lightingTab() {
         h('div', {class: 'hint'}, 'Click one to apply it to this profile. Mute colors are kept, and Undo takes it back.'),
         h('div', {class: 'presets'}, PRESETS.map(presetCard))),
       h('div', {class: 'panel'}, h('h2', {}, 'Lighting (this profile)'),
-      row('Mode', select(l, 'mode', {custom: 'Per control (set on each card)', color: 'Single color', rainbow: 'Rainbow', wave: 'Wave', breath: 'Breath'}, draw)),
+      row('Mode', select(l, 'mode', {custom: 'Per control (set on each card)', color: 'Single color', rainbow: 'Rainbow', wave: 'Wave', breath: 'Breath',
+        visualizer: 'Music visualizer'}, draw)),
+      l.mode === 'visualizer' ? [row('Colors', select(l, 'viz', {rainbow: 'Rainbow', colors: 'Two colors, quiet to loud'}, draw),
+          l.viz === 'colors' ? [color(l, 'color'), 'to', color(l, 'color2')] : null),
+        h('div', {class: 'hint indent'}, isPro()
+          ? 'Everything dances to what your speakers are playing. The sliders show bass, low mids, high mids and treble, left to right; the knobs pulse with the same bands and flash on the beat, and the logo follows the overall level.'
+          : 'Everything dances to what your speakers are playing: the knobs show bass, low mids, high mids and treble, and flash on the beat.'),
+        h('div', {class: 'hint indent'}, 'It listens to your speakers\' output only. Nothing is recorded or saved.')] : null,
       row('Brightness', num(l, 'brightness', 0, 100), h('span', {class: 'hint'}, '0-100, applies to everything')),
       l.mode === 'color' ? row('Color', color(l, 'color')) : null,
       anim ? [row(l.mode === 'rainbow' ? 'Phase' : 'Hue', num(l, 'hue', 0, 255)), row('Speed', num(l, 'speed', 0, 255)), row('Intensity', num(l, 'anim_brightness', 0, 255))] : null,
