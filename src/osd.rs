@@ -81,8 +81,15 @@ unsafe extern "system" fn proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> 
             if let Some(st) = s.borrow_mut().iter_mut().find(|st| st.hwnd == hwnd) {
                 // Fade in fast, hold, fade out.
                 let target = if Instant::now() < st.until { 255 } else { 0 };
-                st.alpha = if target > st.alpha { st.alpha.saturating_add(85) } else { st.alpha.saturating_sub(20) };
-                present(st);
+                let alpha = match target {
+                    255 => st.alpha.saturating_add(85),
+                    _ => st.alpha.saturating_sub(20),
+                };
+                // Only redraw while fading; at full opacity it holds still.
+                if alpha != st.alpha {
+                    st.alpha = alpha;
+                    present(st);
+                }
                 if st.alpha == 0 {
                     let _ = KillTimer(Some(hwnd), TIMER);
                     let _ = ShowWindow(hwnd, SW_HIDE);
