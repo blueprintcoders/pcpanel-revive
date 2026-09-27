@@ -444,7 +444,7 @@ function recordKeys(inp, done) {
   inp._recording = true;
   const prev = inp.value;
   inp.value = '';
-  inp.placeholder = 'Press a key combo... (Esc cancels)';
+  inp.placeholder = 'Press a key combo (Esc cancels)';
   inp.classList.add('recording');
   inp.focus();
   const names = {Space: 'space', Enter: 'enter', Tab: 'tab', Backspace: 'backspace', Delete: 'delete', Insert: 'insert', Home: 'home', End: 'end',
@@ -605,7 +605,7 @@ function drawPicker() {
   const special = pickerOpts.special ? Object.entries(SPECIAL).filter(([k, [n]]) => !q || n.toLowerCase().includes(q) || k.includes(q)) : [];
   const search = h('input', {placeholder: 'Search apps', value: pickerQuery, oninput: e => { pickerQuery = e.target.value; const pos = e.target.selectionStart; drawPicker(); const s = $('#pk-search'); s.focus(); s.setSelectionRange(pos, pos); }, id: 'pk-search'});
   const pointBtn = h('button', {onclick: async e => {
-    const b = e.target; b.disabled = true; b.textContent = 'Now click the app\'s window...';
+    const b = e.target; b.disabled = true; b.textContent = 'Now click the app\'s window';
     try { const r = await (await fetch('/api/pick')).json(); toHost('focus'); if (r.exe) { await loadApps(); pickerChoose(r.exe); } else b.textContent = 'Nothing picked - try again'; }
     finally { b.disabled = false; if (b.textContent.startsWith('Now')) b.textContent = 'Point at a window'; }
   }}, 'Point at a window');
@@ -1123,7 +1123,7 @@ function settingsTab() {
     h('div', {class: 'panel'}, h('h2', {}, 'OBS WebSocket'),
       row('URL', text(cfg.obs, 'url')), row('Password', h('input', {type: 'password', value: cfg.obs.password, oninput: e => { cfg.obs.password = e.target.value; touch(); }}))),
     h('div', {class: 'panel'}, h('h2', {}, 'Help'),
-      h('div', {class: 'hint'}, 'Apps: use Pick... or type/paste exe names (spotify, discord.exe - commas work). ',
+      h('div', {class: 'hint'}, 'Apps: use Pick or type/paste exe names (spotify, discord.exe - commas work). ',
         'Devices: default, default_capture, default_comm, default_comm_capture, or part of a device name. ',
         'Keys: combos like ctrl+shift+m, or media keys play_pause, next, prev, stop, vol_up, vol_down, mute. ',
         'The config file lives at %APPDATA%\\pcpanel-revive\\config.json and is reloaded automatically when edited.'))];
@@ -1154,7 +1154,7 @@ function updatesPanel() {
             h('button', {class: 'pri', onclick: async e => { e.currentTarget.disabled = true; await post('/api/update-install'); }}, 'Update now'),
             updateInfo.page ? h('button', {onclick: () => fetch('/api/test', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-PCP': '1'},
               body: JSON.stringify({control: 0, action: {type: 'open', target: updateInfo.page}})})}, 'What\'s new') : null)
-        : row('', h('button', {onclick: async e => { e.currentTarget.disabled = true; e.currentTarget.textContent = 'Checking...'; await post('/api/update-check'); }}, 'Check now')),
+        : row('', h('button', {onclick: async e => { e.currentTarget.disabled = true; e.currentTarget.textContent = 'Checking'; await post('/api/update-check'); }}, 'Check now')),
       updateNote ? h('div', {class: 'hint'}, updateNote) : null]);
   box._draw = draw;
   draw();
