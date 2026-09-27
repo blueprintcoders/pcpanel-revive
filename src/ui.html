@@ -187,7 +187,9 @@ textarea{flex:1;min-width:220px;font:12px Consolas,monospace;color:var(--text);b
 .pv-wave.pv-viz{animation:pvwave 1.5s linear infinite,vizpulse .45s ease-in-out infinite alternate}
 #device svg.anim-visualizer .led{animation:vizpulse .45s ease-in-out infinite alternate;animation-delay:calc(var(--i) * -.17s)}
 @keyframes vizpulse{from{opacity:.35}to{opacity:1}}
-#selftest{width:min(620px,94vw)}
+#selftest,#setup{width:min(620px,94vw)}
+.setup-rows{display:grid;grid-template-columns:auto auto 1fr;gap:6px 14px;margin:12px 0 16px;font-size:13px}
+.setup-rows b{color:var(--acc)}
 .st{padding:16px 18px 18px}
 .st-head{display:flex;align-items:center;gap:12px;margin-bottom:6px}
 .st-head h2{margin:0;font-size:16px}
@@ -224,6 +226,7 @@ textarea{flex:1;min-width:220px;font:12px Consolas,monospace;color:var(--text);b
 <input type="file" id="importFile" accept=".json" hidden>
 <dialog id="picker"></dialog>
 <dialog id="selftest"></dialog>
+<dialog id="setup"></dialog>
 <input type="file" id="profileFile" accept=".json" hidden>
 <input type="file" id="browse" accept=".exe" multiple hidden>
 <script>
@@ -1027,7 +1030,9 @@ function settingsTab() {
   const p = prof();
   return [h('div', {class: 'panel'}, h('h2', {}, 'Panel'),
       row('', h('button', {class: 'pri', onclick: selfTest}, 'Test my panel...'),
-        h('span', {class: 'hint'}, 'Checks every light, knob, slider and button. Takes about a minute.'))),
+        h('span', {class: 'hint'}, 'Checks every light, knob, slider and button. Takes about a minute.')),
+      row('', h('button', {onclick: quickSetup}, 'Quick setup...'),
+        h('span', {class: 'hint'}, 'A ready-made layout for the apps on this PC, added as a new profile.'))),
     isPro() ? profileSliderPanel() : null,
     h('div', {class: 'panel'}, h('h2', {}, 'This profile'),
       row('Auto apps', appChips(p, 'auto_apps')),
@@ -1163,6 +1168,65 @@ $('#profileFile').onchange = async e => {
   } catch (err) { $('#status').textContent = 'Couldn\'t import: ' + err.message; }
 };
 
+// ---- quick setup: a ready-made profile for the apps on this PC ----
+const APP_GROUPS = {
+  browser: ['chrome.exe', 'msedge.exe', 'firefox.exe', 'brave.exe', 'opera.exe', 'vivaldi.exe', 'arc.exe'],
+  chat: ['discord.exe', 'ms-teams.exe', 'teams.exe', 'slack.exe', 'zoom.exe', 'telegram.exe', 'whatsapp.exe', 'signal.exe', 'skype.exe'],
+  music: ['spotify.exe', 'applemusic.exe', 'itunes.exe', 'tidal.exe', 'deezer.exe', 'musicbee.exe', 'foobar2000.exe', 'vlc.exe'],
+};
+// Running apps of a group; the most common ones when none are running, so it works once they start.
+const appsOf = g => { const run = APP_GROUPS[g].filter(e => pickerApps.some(a => a.exe === e)); return run.length ? run : APP_GROUPS[g].slice(0, 3); };
+function setupLayout() {
+  const dev = device => ({type: 'device', device}), app = apps => ({type: 'app', apps});
+  const keys = k => ({type: 'keys', keys: k});
+  const names = g => appsOf(g).map(e => appLook(e).name).join(', ');
+  // [label, turn, press, double, hold, description]
+  const speakers = ['Speakers', dev('default'), [{type: 'mute_turn'}], [], [{type: 'cheat_sheet'}], 'Speaker volume. Press: mute. Hold: cheat sheet of every control'];
+  const front = ['App in front', app(['focused']), [keys('play_pause')], [keys('next')], [], 'Volume of the app you\'re using. Press: play/pause. Double press: next track'];
+  const chat = ['Chat', app(appsOf('chat')), [{type: 'mute_turn'}], [], [], `${names('chat')} volume. Press: mute`];
+  const music = ['Music', app(appsOf('music')), [{type: 'mute_turn'}], [], [], `${names('music')} volume. Press: mute`];
+  if (!isPro()) return [speakers, front, chat, music];
+  return [speakers,
+    ['Mic', dev('default_capture'), [{type: 'mute_turn'}], [], [], 'Microphone level. Press: mute the mic'],
+    front,
+    ['System sounds', app(['system']), [{type: 'mute_others', apps: ['focused']}], [], [], 'Windows sounds. Press: focus mode, muting every app but the one in front'],
+    ['Lights', {type: 'brightness'}, [{type: 'lights_toggle'}], [], [], 'Panel brightness. Press: lights on/off'],
+    ['Browser', app(appsOf('browser')), [], [], [], `${names('browser')} volume`],
+    chat.slice(0, 2).concat([[], [], [], `${names('chat')} volume`]),
+    music.slice(0, 2).concat([[], [], [], `${names('music')} volume`]),
+    ['Everything else', app(['unmapped']), [], [], [], 'Every app not on another control']];
+}
+async function quickSetup() {
+  store('setupOffered', '1');
+  if (notice && notice.kind === 'setup') { notice = null; drawNotice(); }
+  const dlg = $('#setup');
+  put(dlg, h('div', {class: 'st'}, h('p', {}, 'Looking at your apps...')));
+  dlg.showModal();
+  await loadApps();
+  const layout = setupLayout();
+  const colors = ['#ff3b30', '#ff9500', '#ffcc00', '#34c759', '#00c7be', '#007aff', '#5856d6', '#af52de', '#ff2d55'];
+  const create = () => {
+    let name = 'Quick setup', n = 2;
+    while (cfg.profiles[name]) name = `Quick setup ${n++}`;
+    const controls = colors.map((color, i) => {
+      const [label, turn, press, dbl, hold] = layout[i] || ['', {type: 'none'}, [], [], []];
+      return {label, turn, min: 0, max: 100, invert: false, curve: 'linear', press, double: dbl, hold,
+        light: {mode: i < KNOBS ? 'static' : 'volume', color, color2: color, mute_color: '#ff0000'}, label_color: color};
+    });
+    cfg.profiles[name] = {auto_apps: [], controls, lighting: {mode: 'custom', brightness: 85, logo: {mode: 'static', color: '#ffffff', hue: 0, speed: 100, brightness: 255}}};
+    cfg.active = name;
+    dlg.close();
+    tab = 'controls'; sel = 0;
+    touch(); render();
+    $('#status').textContent = `Created "${name}" - Undo takes it back`;
+  };
+  put(dlg, h('div', {class: 'st'},
+    h('div', {class: 'st-head'}, h('h2', {}, 'Quick setup'), h('button', {class: 'x', title: 'Close', onclick: () => dlg.close()}, '×')),
+    h('p', {class: 'hint'}, 'A ready-made layout, based on the apps on this PC. It\'s added as a new profile, so your current profiles stay exactly as they are. Change anything afterwards.'),
+    h('div', {class: 'setup-rows'}, layout.map(([label, , , , , what], i) => [h('b', {}, ctlShort(i)), h('span', {}, label), h('span', {class: 'hint'}, what)])),
+    h('div', {class: 'row'}, h('button', {class: 'pri', onclick: create}, 'Create the profile'), h('button', {onclick: () => dlg.close()}, 'Cancel'))));
+}
+
 // ---- panel self-test ----
 async function selfTest() {
   const dlg = $('#selftest');
@@ -1247,13 +1311,24 @@ const store = (k, v) => { try { return v === undefined ? localStorage.getItem(k)
 async function checkStock() {
   try { stock = await (await fetch('/api/stock')).json(); } catch (e) {}
   if (stock.found && !store('importOffered') && !notice) { notice = {kind: 'offer'}; drawNotice(); }
+  stockChecked = true;
+  offerSetup();
+}
+// First run: nothing but the starting profile, and no official software to import from.
+let stockChecked = false;
+function offerSetup() {
+  if (!cfg || !stockChecked || notice || store('setupOffered') || previewModel) return;
+  if (Object.keys(cfg.profiles).length === 1 && !stock.found) { notice = {kind: 'setup'}; drawNotice(); }
 }
 function drawNotice() {
   const n = $('#notice');
   if (!notice) { put(n); n.hidden = true; return; }
   n.hidden = false;
   const close = h('button', {class: 'x', title: 'Dismiss', onclick: () => { store('importOffered', '1'); notice = null; drawNotice(); }}, '×');
-  if (notice.kind === 'offer') {
+  if (notice.kind === 'setup') {
+    put(n, h('div', {class: 'nt-body'}, h('b', {}, 'New here?'), ' Get a ready-made layout for your apps in one click: speakers, mic, chat, music and more.'),
+      h('button', {class: 'pri', onclick: quickSetup}, 'Quick setup'), h('button', {class: 'x', title: 'Dismiss', onclick: () => { store('setupOffered', '1'); notice = null; drawNotice(); }}, '×'));
+  } else if (notice.kind === 'offer') {
     put(n, h('div', {class: 'nt-body'}, h('b', {}, 'Found your PCPanel profiles.'), ' Bring over your knobs, sliders, buttons and lighting from the official software?'),
       h('button', {class: 'pri', onclick: () => importStock()}, 'Import'), close);
   } else {
@@ -1376,7 +1451,7 @@ async function poll() {
     // The tray app reloads our save a moment later; that echo isn't an outside change, so don't redraw for it.
     if (j !== lastCfgJson && Date.now() - lastSaveAt < 2000) lastCfgJson = j;
     if (!dirty && !saving && j !== lastCfgJson && !$('#picker').open) {
-      lastCfgJson = j; cfg = s.config; lastSaved = JSON.stringify(cfg); render();
+      lastCfgJson = j; cfg = s.config; lastSaved = JSON.stringify(cfg); render(); offerSetup();
       if (!$('#status').textContent) $('#status').textContent = 'All changes saved';
     }
   } catch (e) { $('#conn').textContent = 'background app not running'; $('#dot').className = 'dot'; }
