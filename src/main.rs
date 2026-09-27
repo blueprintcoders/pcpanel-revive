@@ -11,6 +11,7 @@ mod obs;
 mod shellhook;
 mod osd;
 mod sys;
+mod update;
 mod viz;
 mod web;
 
@@ -71,7 +72,52 @@ pub struct Shared {
     pub peaks: [f32; CONTROLS],
     /// The official PCPanel software is running too (both apps would react to the panel).
     pub official_running: bool,
+    /// A newer version on GitHub, and the result of the last check or install, for the settings window.
+    pub update: Option<update::Release>,
+    pub update_note: String,
     last_log: String,
+}
+
+static UI_THREAD: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// Ask the tray thread to refresh the tray menu and tooltip.
+pub fn refresh_tray() {
+    unsafe { let _ = PostThreadMessageW(UI_THREAD.load(std::sync::atomic::Ordering::Relaxed), WM_REFRESH, WPARAM(0), LPARAM(0)); }
+}
+
+/// Check GitHub for a newer version now; `manual` also reports "up to date" and errors.
+pub fn check_update(shared: &Mutex<Shared>, manual: bool) {
+    match update::check() {
+        Ok(found) => {
+            let mut s = lock(shared);
+            if found.is_some() && s.update.is_none() {
+                drop(s);
+                log(shared, format!("version {} is available", found.as_ref().unwrap().version));
+                s = lock(shared);
+            }
+            s.update_note = if found.is_some() { String::new() } else { "You have the latest version.".into() };
+            s.update = found;
+        }
+        Err(e) if manual => lock(shared).update_note = format!("Couldn't check: {e}"),
+        Err(_) => {}
+    }
+    refresh_tray();
+}
+
+/// Download and install the update, then quit so the new version takes over.
+pub fn install_update(shared: &Mutex<Shared>) {
+    let Some(r) = lock(shared).update.clone() else { return };
+    lock(shared).update_note = format!("Downloading version {}...", r.version);
+    match update::install(&r) {
+        Ok(()) => {
+            log(shared, format!("updated to version {}", r.version));
+            unsafe { let _ = PostThreadMessageW(UI_THREAD.load(std::sync::atomic::Ordering::Relaxed), WM_QUIT_APP, WPARAM(0), LPARAM(0)); }
+        }
+        Err(e) => {
+            log(shared, format!("update failed: {e}"));
+            lock(shared).update_note = format!("Update failed: {e}");
+        }
+    }
 }
 
 /// Lock that survives a panic in another thread (a poisoned lock would take every other thread down too).
@@ -159,6 +205,10 @@ pub fn icon_rgba() -> Vec<u8> {
 fn build_menu(shared: &Mutex<Shared>) -> Menu {
     let s = crate::lock(&shared);
     let menu = Menu::new();
+    if let Some(u) = &s.update {
+        let _ = menu.append(&MenuItem::with_id("update", format!("Update to version {}", u.version), true, None));
+        let _ = menu.append(&PredefinedMenuItem::separator());
+    }
     let _ = menu.append(&MenuItem::with_id("open", "Settings...", true, None));
     let profiles = Submenu::new("Profile", true);
     for name in s.config.profiles.keys() {
@@ -182,13 +232,25 @@ fn main() {
     if std::env::args().any(|a| a == "--settings") {
         return settings();
     }
-    unsafe {
-        let _m = CreateMutexW(None, true, w!("Local\\PCPanelReviveSingleInstance"));
-        if GetLastError() == ERROR_ALREADY_EXISTS {
-            open_settings();
-            return;
+    // Right after an update, the old version may still be closing: wait for it.
+    let updated = std::env::args().any(|a| a == "--updated");
+    for tries in 0.. {
+        unsafe {
+            let m = CreateMutexW(None, true, w!("Local\\PCPanelReviveSingleInstance"));
+            if GetLastError() != ERROR_ALREADY_EXISTS {
+                break;
+            }
+            if !updated || tries >= 40 {
+                open_settings();
+                return;
+            }
+            if let Ok(h) = m {
+                let _ = windows::Win32::Foundation::CloseHandle(h);
+            }
         }
+        std::thread::sleep(std::time::Duration::from_millis(250));
     }
+    update::cleanup();
     std::panic::set_hook(Box::new(|info| {
         let t = std::thread::current();
         log_file(&format!("CRASH in {} thread: {info}", t.name().unwrap_or("unnamed")));
@@ -205,6 +267,7 @@ fn main() {
     crate::lock(&shared).config = cfg.clone();
 
     let ui_thread = unsafe { GetCurrentThreadId() };
+    UI_THREAD.store(ui_thread, std::sync::atomic::Ordering::Relaxed);
     let post = move |m: u32| unsafe { let _ = PostThreadMessageW(ui_thread, m, WPARAM(0), LPARAM(0)); };
     let (tx, rx) = channel();
 
@@ -226,7 +289,18 @@ fn main() {
             }
         }).expect("engine thread");
     }
-    log_file("started");
+    log_file(&format!("started version {}", env!("CARGO_PKG_VERSION")));
+    {
+        // Look for updates a little after startup, then once a day.
+        let shared = shared.clone();
+        std::thread::spawn(move || loop {
+            std::thread::sleep(std::time::Duration::from_secs(30));
+            if lock(&shared).config.update_check && update::REPO.is_some() {
+                check_update(&shared, false);
+            }
+            std::thread::sleep(std::time::Duration::from_secs(24 * 3600));
+        });
+    }
 
     let tray: TrayIcon = TrayIconBuilder::new()
         .with_icon(Icon::from_rgba(icon_rgba(), 32, 32).unwrap())
@@ -244,6 +318,7 @@ fn main() {
             open_settings();
         }
     }));
+    let menu_shared = shared.clone();
     MenuEvent::set_event_handler(Some(move |e: MenuEvent| {
         let id = e.id.0.as_str();
         match id {
@@ -251,6 +326,10 @@ fn main() {
             "reload" => { let _ = tx.send(Msg::Reload); }
             "autostart" => { sys::set_autostart(!sys::autostart_enabled()); post(WM_REFRESH); }
             "quit" => post(WM_QUIT_APP),
+            "update" => {
+                let shared = menu_shared.clone();
+                std::thread::spawn(move || install_update(&shared));
+            }
             _ => if let Some(p) = id.strip_prefix("p:") { let _ = tx.send(Msg::Profile(p.to_string())); },
         }
     }));

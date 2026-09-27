@@ -33,7 +33,7 @@ fn json_response(v: serde_json::Value) -> Response<std::io::Cursor<Vec<u8>>> {
     Response::from_string(v.to_string()).with_header(Header::from_bytes("Content-Type", "application/json").unwrap())
 }
 
-fn handle(mut req: Request, tx: &Sender<Msg>, shared: &Mutex<Shared>, audio: Option<&audio::Audio>, cache: &mut apps::Cache) -> std::io::Result<()> {
+fn handle(mut req: Request, tx: &Sender<Msg>, shared: &Arc<Mutex<Shared>>, audio: Option<&audio::Audio>, cache: &mut apps::Cache) -> std::io::Result<()> {
     // Block DNS rebinding and cross-site writes: the config can run commands and holds the OBS password.
     let host_ok = header(&req, "Host").is_some_and(|h| h == format!("127.0.0.1:{PORT}") || h == format!("localhost:{PORT}"));
     if !host_ok {
@@ -50,6 +50,7 @@ fn handle(mut req: Request, tx: &Sender<Msg>, shared: &Mutex<Shared>, audio: Opt
                 "config": s.config, "values": s.values, "connected": s.connected, "muted": s.muted,
                 "levels": s.levels, "present": s.present, "alerts_on": s.alerts_on, "model": s.model.id(), "model_name": s.model.name(), "buttons": s.buttons, "peaks": s.peaks, "official_running": s.official_running, "lights": {"gen": s.lights_gen, "written": s.lights_written, "reports": s.lights.iter().map(|r| r[..9].to_vec()).collect::<Vec<_>>()},
                 "log": s.log, "autostart": crate::sys::autostart_enabled(),
+                "version": env!("CARGO_PKG_VERSION"), "can_update": crate::update::REPO.is_some(), "update": s.update, "update_note": s.update_note,
             });
             drop(s);
             req.respond(json_response(body))
@@ -82,6 +83,15 @@ fn handle(mut req: Request, tx: &Sender<Msg>, shared: &Mutex<Shared>, audio: Opt
                 }
                 Err(e) => req.respond(Response::from_string(e).with_status_code(500)),
             }
+        }
+        (Method::Post, "/api/update-check") if header(&req, "X-PCP").is_some() => {
+            crate::check_update(shared, true);
+            req.respond(json_response(json!({"ok": true})))
+        }
+        (Method::Post, "/api/update-install") if header(&req, "X-PCP").is_some() => {
+            let shared = shared.clone();
+            std::thread::spawn(move || crate::install_update(&shared));
+            req.respond(json_response(json!({"ok": true})))
         }
         (Method::Post, "/api/open-log") if header(&req, "X-PCP").is_some() => {
             let _ = crate::sys::open(&crate::log_path().to_string_lossy());

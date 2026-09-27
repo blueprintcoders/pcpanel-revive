@@ -31,6 +31,8 @@ pub struct Config {
     pub alerts: Vec<Alert>,
     /// A slider that picks the profile, in every profile.
     pub profile_slider: ProfileSlider,
+    /// Look for a new version on GitHub once a day.
+    pub update_check: bool,
 }
 
 /// Slide to switch profiles: the travel is split evenly between `profiles`, bottom first.
@@ -346,7 +348,7 @@ impl Default for Config {
         Config {
             active: "Default".into(), deadband: 1, apply_on_connect: false, double_press_ms: 300, hold_ms: 500, button_debounce_ms: 50,
             osd: true, osd_position: "bottom".into(), pickup: true, obs: Obs::default(), profiles, alerts: vec![],
-            profile_slider: ProfileSlider::default(),
+            profile_slider: ProfileSlider::default(), update_check: true,
         }
     }
 }

@@ -12,12 +12,17 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      # Where the app looks for updates.
+      PCPANEL_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --release
       - run: cargo build --release
+      # The app checks downloads against this before installing an update.
+      - run: (Get-FileHash target/release/pcpanel-revive.exe -Algorithm SHA256).Hash.ToLower() | Set-Content -NoNewline target/release/pcpanel-revive.exe.sha256
       - uses: actions/upload-artifact@v4
         with:
           name: pcpanel-revive
@@ -26,5 +31,7 @@ jobs:
       - if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: target/release/pcpanel-revive.exe
+          files: |
+            target/release/pcpanel-revive.exe
+            target/release/pcpanel-revive.exe.sha256
           generate_release_notes: true

@@ -246,6 +246,28 @@ pub fn http(method: &str, url: &str, headers: &str, body: &str) -> Result<(), St
     }
 }
 
+/// GET a URL (following redirects) and return the body.
+pub fn http_get(url: &str) -> Result<String, String> {
+    let out = Command::new("curl.exe").args(["-sSfL", "--max-time", "20", "--", url]).creation_flags(NO_WINDOW).output()
+        .map_err(|e| format!("curl.exe: {e}"))?;
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+    }
+}
+
+/// Download a URL (following redirects) to a file.
+pub fn download(url: &str, to: &std::path::Path) -> Result<(), String> {
+    let out = Command::new("curl.exe").args(["-sSfL", "--max-time", "300", "-o"]).arg(to).arg("--").arg(url)
+        .creation_flags(NO_WINDOW).output().map_err(|e| format!("curl.exe: {e}"))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+    }
+}
+
 pub fn lock() {
     unsafe { let _ = windows::Win32::System::Shutdown::LockWorkStation(); }
 }

@@ -1061,6 +1061,7 @@ function settingsTab() {
     h('div', {class: 'panel'}, h('h2', {}, 'Volume popup'),
       row('', check(cfg, 'osd', 'Show a popup when a dial changes a volume, mutes, or switches profile')),
       row('Position', select(cfg, 'osd_position', {bottom: 'Bottom of the screen', top: 'Top of the screen'}))),
+    updatesPanel(),
     backupsPanel(),
     h('div', {class: 'panel'}, h('h2', {}, 'OBS WebSocket'),
       row('URL', text(cfg.obs, 'url')), row('Password', h('input', {type: 'password', value: cfg.obs.password, oninput: e => { cfg.obs.password = e.target.value; touch(); }}))),
@@ -1079,6 +1080,26 @@ function profileSliderPanel() {
       [{value: 0, label: 'Off'}, ...[1, 2, 3, 4].map(n => ({value: n, label: 'Slider ' + n}))])),
     ps.slider ? [row('Profiles', chips(ps, 'profiles', 'profiles')), h('div', {class: 'hint indent'}, 'Bottom first. Only existing profiles count; extras past five are ignored.'),
       row('Light', color(ps, 'color'), h('span', {class: 'hint'}, 'fills up to the slider\'s position'))] : null);
+  draw();
+  return box;
+}
+// ---- updates ----
+let appVersion = '', canUpdate = false, updateInfo = null, updateNote = '';
+function updatesPanel() {
+  const box = h('div', {class: 'panel', id: 'updates'});
+  const post = url => fetch(url, {method: 'POST', headers: {'X-PCP': '1'}});
+  const draw = () => put(box, h('h2', {}, 'Updates'),
+    h('div', {class: 'hint'}, `You have version ${appVersion}.`),
+    !canUpdate ? h('div', {class: 'hint'}, 'This copy was built on this PC, so it doesn\'t update itself.') : [
+      row('', check(cfg, 'update_check', 'Check for a new version once a day')),
+      updateInfo
+        ? row('', h('b', {}, `Version ${updateInfo.version} is available.`),
+            h('button', {class: 'pri', onclick: async e => { e.currentTarget.disabled = true; await post('/api/update-install'); }}, 'Update now'),
+            updateInfo.page ? h('button', {onclick: () => fetch('/api/test', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-PCP': '1'},
+              body: JSON.stringify({control: 0, action: {type: 'open', target: updateInfo.page}})})}, 'What\'s new') : null)
+        : row('', h('button', {onclick: async e => { e.currentTarget.disabled = true; e.currentTarget.textContent = 'Checking...'; await post('/api/update-check'); }}, 'Check now')),
+      updateNote ? h('div', {class: 'hint'}, updateNote) : null]);
+  box._draw = draw;
   draw();
   return box;
 }
@@ -1448,6 +1469,13 @@ async function poll() {
     if (log) put(log, h('h2', {}, 'Log'), s.log.length ? s.log.slice().reverse().map(l => h('div', {}, l)) : h('div', {class: 'hint'}, 'Nothing yet.'));
     const j = JSON.stringify(s.config);
     autostart = !!s.autostart;
+    const upd = JSON.stringify([s.version, s.can_update, s.update, s.update_note]);
+    if (upd !== JSON.stringify([appVersion, canUpdate, updateInfo, updateNote])) {
+      // A new version started after an update: load its settings page.
+      if (appVersion && s.version && s.version !== appVersion) location.reload();
+      [appVersion, canUpdate, updateInfo, updateNote] = [s.version, s.can_update, s.update || null, s.update_note || ''];
+      $('#updates')?._draw();
+    }
     // The tray app reloads our save a moment later; that echo isn't an outside change, so don't redraw for it.
     if (j !== lastCfgJson && Date.now() - lastSaveAt < 2000) lastCfgJson = j;
     if (!dirty && !saving && j !== lastCfgJson && !$('#picker').open) {
