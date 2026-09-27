@@ -42,17 +42,24 @@ pub struct ProfileSlider {
     /// 0 = off, 1-4 = S1-S4.
     pub slider: u8,
     pub profiles: Vec<String>,
-    /// Its light fills up to the slider's position in this color.
+    /// Its light fills up to the slider's position, in the active profile's color from `colors`,
+    /// or this one for a profile without its own.
     pub color: String,
+    pub colors: BTreeMap<String, String>,
 }
 
 impl Default for ProfileSlider {
     fn default() -> Self {
-        ProfileSlider { slider: 0, profiles: vec![], color: "#ffffff".into() }
+        ProfileSlider { slider: 0, profiles: vec![], color: "#ffffff".into(), colors: BTreeMap::new() }
     }
 }
 
 impl ProfileSlider {
+    /// The fill color while `profile` is active.
+    pub fn color_for(&self, profile: &str) -> &str {
+        self.colors.get(profile).filter(|c| !c.is_empty()).unwrap_or(&self.color)
+    }
+
     /// The slider's control index, when it's in use.
     pub fn control(&self) -> Option<usize> {
         ((1..=CONTROLS - KNOBS).contains(&(self.slider as usize)) && !self.profiles.is_empty()).then(|| KNOBS + self.slider as usize - 1)

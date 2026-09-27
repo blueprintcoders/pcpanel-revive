@@ -648,6 +648,7 @@ const LIGHTS = ['k1', 'k2', 'k3', 'k4', 'k5', 's1', 's2', 's3', 's4', 'logo'];
 const MINI_KNOBS = [[82, 132], [194, 132], [306, 132], [418, 132]];
 // The active alert drawn on LED i (0-8 = controls, 9 = logo), if any.
 // The slider that switches profiles (Settings > Profile slider), if any.
+const sliderColor = name => (cfg.profile_slider.colors || {})[name] || cfg.profile_slider.color;
 const profileSlider = () => { const ps = cfg.profile_slider || {}; return ps.slider >= 1 && ps.slider <= 4 && (ps.profiles || []).length ? KNOBS + ps.slider - 1 : -1; };
 const alertFor = i => (cfg.alerts || []).find((a, n) => alertsOn[n] && (a.lights || []).includes(LIGHTS[i]));
 const fx = a => a ? {cls: ` fx-${a.effect || 'pulse'}`, style: `--p:${a.period_ms || 1200}ms;`} : {cls: '', style: ''};
@@ -705,7 +706,7 @@ function ledOf(i, v) {
   if (al) return {solid: al.color, alert: al};
   if (l.mode === 'color') return {solid: l.color};
   if (l.mode !== 'custom') return {anim: true};
-  if (i === profileSlider()) return {from: cfg.profile_slider.color, to: cfg.profile_slider.color, fill: v / 255};
+  if (i === profileSlider()) { const c = sliderColor(cfg.active); return {from: c, to: c, fill: v / 255}; }
   let lt = c.light;
   if (muted[i] && lt.mute_color) lt = {mode: 'static', color: lt.mute_color};
   if (lt.mode === 'static') return {solid: lt.color};
@@ -1136,7 +1137,9 @@ function profileSliderPanel() {
     row('Slider', combo(() => ps.slider, v => { ps.slider = v; touch(); draw(); },
       [{value: 0, label: 'Off'}, ...[1, 2, 3, 4].map(n => ({value: n, label: 'Slider ' + n}))])),
     ps.slider ? [row('Profiles', chips(ps, 'profiles', 'profiles')), h('div', {class: 'hint indent'}, 'Only existing profiles count; extras past five are ignored.'),
-      row('Light', color(ps, 'color'), h('span', {class: 'hint'}, 'fills up to the slider\'s position'))] : null);
+      row('Colors', h('div', {class: 'displays'}, ps.profiles.filter(n => cfg.profiles[n]).map(n => h('label', {},
+        h('input', {type: 'color', value: sliderColor(n), oninput: e => { ps.colors = ps.colors || {}; ps.colors[n] = e.target.value; touch(); }}), ' ', n)),
+        h('div', {class: 'hint'}, 'The light fills up to the slider\'s position, in the color of the profile you\'re on.')))] : null);
   draw();
   return box;
 }
@@ -1596,6 +1599,7 @@ $('#pRen').onclick = () => {
   // Keep everything that points at the profile by name.
   const ps = cfg.profile_slider;
   if (ps) ps.profiles = (ps.profiles || []).map(x => x === old ? n : x);
+  if (ps && ps.colors && ps.colors[old]) { ps.colors[n] = ps.colors[old]; delete ps.colors[old]; }
   for (const p of Object.values(cfg.profiles)) for (const c of p.controls) for (const a of [...c.press, ...c.double, ...c.hold])
     if ((a.type === 'profile' && a.name === old) || (a.type === 'shift' && a.profile === old)) a.type === 'profile' ? a.name = n : a.profile = n;
   touch(); render();

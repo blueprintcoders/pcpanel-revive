@@ -804,9 +804,9 @@ impl Engine {
             };
             f.controls[i].light = live_light(&p.controls[i].light, v, i >= KNOBS);
         }
-        // The profile slider looks the same in every profile: filled up to its position.
+        // The profile slider: filled up to its position, in the active profile's color.
         if let Some(i) = self.cfg.profile_slider.control() {
-            let c = self.cfg.profile_slider.color.clone();
+            let c = self.cfg.profile_slider.color_for(&self.cfg.active).to_string();
             f.controls[i].light = Light { mode: "volume".into(), color: c.clone(), color2: c.clone(), mute_color: String::new() };
             f.controls[i].label_color = c;
         }
