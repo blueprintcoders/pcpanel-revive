@@ -463,13 +463,13 @@ fn lit(v: i32) -> usize {
 
 /// Which of `n` profiles (up to five) a slider position picks: the first up to one segment lit (the
 /// very bottom counts as one), the next with two, and so on; the last profile keeps the rest of the way
-/// up. So every change of profile is exactly where a segment turns on or off. Near an edge it stays with
-/// the current profile, so a slider resting on the line doesn't flip between two.
+/// up. Going up, the profile changes exactly as the next segment lights. Going down, it holds on a few
+/// steps past where the light goes off, so a slider resting on the line doesn't flip between two.
 fn segment(value: u8, n: usize, current: Option<usize>) -> usize {
     let at = |v: i32| (lit(v).max(1) - 1).min(n.clamp(1, 5) - 1);
     let v = value as i32;
     match current {
-        Some(c) if at(v - 8) == c || at(v + 8) == c => c,
+        Some(c) if at(v) < c && at(v + 3) == c => c,
         _ => at(v),
     }
 }
@@ -1426,10 +1426,13 @@ mod tests {
         // Five profiles: one per segment, switching where the panel lights the next one.
         let picks: Vec<usize> = [0u8, 70, 80, 125, 130, 175, 182, 225, 235, 255].iter().map(|&v| segment(v, 5, None)).collect();
         assert_eq!(picks, [0, 0, 1, 1, 2, 2, 3, 3, 4, 4]);
-        // The second segment lights at 77.
-        assert_eq!(segment(80, 2, Some(0)), 0, "just past the edge: stays");
-        assert_eq!(segment(90, 2, Some(0)), 1);
-        assert_eq!(segment(72, 2, Some(1)), 1);
+        // The second segment lights at 77: going up, it switches right there.
+        assert_eq!(segment(76, 2, Some(0)), 0);
+        assert_eq!(segment(77, 2, Some(0)), 1, "switches as the segment lights");
+        // Going down, it holds on until 3 below the edge.
+        assert_eq!(segment(75, 2, Some(1)), 1, "jitter under the edge doesn't switch back");
+        assert_eq!(segment(74, 2, Some(1)), 1);
+        assert_eq!(segment(73, 2, Some(1)), 0);
         assert_eq!(segment(250, 3, Some(0)), 2, "a jump far away switches at once");
     }
 
