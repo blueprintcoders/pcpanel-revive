@@ -1132,10 +1132,10 @@ function profileSliderPanel() {
   const ps = cfg.profile_slider = cfg.profile_slider || {slider: 0, profiles: [], color: '#ffffff'};
   const box = h('div', {class: 'panel'});
   const draw = () => put(box, h('h2', {}, 'Profile slider'),
-    h('div', {class: 'hint'}, 'Turn one slider into a profile switch: its travel is split evenly between the profiles you list, bottom first. Up to five, one per light segment. It switches profiles in every profile, so it no longer controls a volume.'),
+    h('div', {class: 'hint'}, 'Turn one slider into a profile switch: its travel is shared between the profiles you list, bottom first. Up to six, one for each look of its light, from no segments lit to all five. It switches profiles in every profile, so it no longer controls a volume.'),
     row('Slider', combo(() => ps.slider, v => { ps.slider = v; touch(); draw(); },
       [{value: 0, label: 'Off'}, ...[1, 2, 3, 4].map(n => ({value: n, label: 'Slider ' + n}))])),
-    ps.slider ? [row('Profiles', chips(ps, 'profiles', 'profiles')), h('div', {class: 'hint indent'}, 'Bottom first. Only existing profiles count; extras past five are ignored.'),
+    ps.slider ? [row('Profiles', chips(ps, 'profiles', 'profiles')), h('div', {class: 'hint indent'}, 'Bottom first. Only existing profiles count; extras past six are ignored.'),
       row('Light', color(ps, 'color'), h('span', {class: 'hint'}, 'fills up to the slider\'s position'))] : null);
   draw();
   return box;

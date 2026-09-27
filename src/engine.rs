@@ -455,10 +455,17 @@ fn sheet_rows(cfg: &Config, n: usize) -> Vec<[String; 3]> {
     }).collect()
 }
 
-/// Which of `n` equal ranges a slider position is in. Near an edge it stays in the current range,
-/// so a slider resting on the line between two profiles doesn't flip between them.
+/// How many of a slider's five segments the panel lights in fill mode: position / 51, rounded
+/// (measured on a Pro). That's six looks, from none lit to all five.
+fn lit(v: i32) -> usize {
+    ((v.clamp(0, 255) as f32 / 51.0).round() as usize).min(5)
+}
+
+/// Which of `n` profiles (up to six) a slider position picks. The six light looks are shared out
+/// between them, so every change of profile is exactly where a segment turns on or off. Near an edge
+/// it stays with the current profile, so a slider resting on the line doesn't flip between two.
 fn segment(value: u8, n: usize, current: Option<usize>) -> usize {
-    let at = |v: i32| (v.clamp(0, 255) as usize * n / 256).min(n - 1);
+    let at = |v: i32| lit(v) * n.clamp(1, 6) / 6;
     let v = value as i32;
     match current {
         Some(c) if at(v - 6) == c || at(v + 6) == c => c,
@@ -1420,6 +1427,9 @@ mod tests {
         assert_eq!(segment(140, 2, Some(0)), 1);
         assert_eq!(segment(125, 2, Some(1)), 1);
         assert_eq!(segment(250, 3, Some(0)), 2, "a jump far away switches at once");
+        // Six profiles: one per light look, switching where the panel lights the next segment.
+        let picks: Vec<usize> = [0u8, 20, 30, 70, 80, 125, 130, 175, 182, 225, 235, 255].iter().map(|&v| segment(v, 6, None)).collect();
+        assert_eq!(picks, [0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
     }
 
     #[test]
