@@ -182,6 +182,7 @@ textarea{flex:1;min-width:220px;font:12px Consolas,monospace;color:var(--text);b
 .pv-wrap{width:100%;margin-bottom:4px}
 .pv-dev{display:block;width:100%;height:auto;max-height:230px}
 .pv-anim .led{animation:hue 4s linear infinite;animation-delay:calc(var(--i) * -.3s)}
+.pv-breath .led{animation:breath 3.5s ease-in-out infinite}
 .viz-chips{display:flex;flex-wrap:wrap;gap:6px;flex:1;min-width:0}
 .viz-chip{display:inline-flex;align-items:center;gap:7px;padding:4px 10px 4px 5px;font-size:12px}
 .viz-chip i{width:26px;height:14px;border-radius:4px;display:inline-block}
@@ -970,6 +971,13 @@ const PRESETS = [
     logo: {mode: 'rainbow', speed: 100, brightness: 255}},
   {name: 'Rainbow Wave', desc: 'A rainbow that rolls across the whole panel', brightness: 90, mode: 'wave',
     wave: {hue: 0, speed: 140, anim_brightness: 255, reverse: false, bounce: false}},
+  {name: 'Lavender', desc: 'Soft purples and pinks, gentle on the eyes', brightness: 70, labels: '#f0d9ff',
+    knobs: [['static', '#b388ff'], ['static', '#e1a3ff'], ['static', '#9d6bff'], ['static', '#ff9ed8'], ['static', '#c7a4ff']],
+    sliders: Array(4).fill(['volume', '#8a5cff', '#ffb3e6']), logo: {mode: 'breath', hue: 200, speed: 50, brightness: 255}},
+  // Breath lights the whole panel in one color; knobs, sliders and labels here only draw the preview.
+  {name: 'Slow Breath', desc: 'The whole panel breathes slowly in deep blue', brightness: 80, mode: 'breath',
+    wave: {hue: 160, speed: 40, anim_brightness: 255}, labels: '#3d7bff',
+    knobs: Array(5).fill(['static', '#3d7bff']), sliders: Array(4).fill(['static', '#3d7bff']), logo: {mode: 'static', color: '#3d7bff'}},
 ];
 // Visualizer looks: they change only the visualizer, never the lighting it takes over from.
 const VIZ_PRESETS = [
@@ -1021,7 +1029,7 @@ function presetSvg(pr) {
   const slider = k => pr.sliders ? pr.sliders[k] : ['gradient', hue(KNOBS + k), hue(KNOBS + k + 1)];
   const pt = (cx, cy, r, deg) => [cx + r * Math.sin(deg * Math.PI / 180), cy - r * Math.cos(deg * Math.PI / 180)];
   const ring = (cx, cy) => { const [x0, y0] = pt(cx, cy, 38, -135), [x1, y1] = pt(cx, cy, 38, 135); return `M${x0} ${y0}A38 38 0 1 1 ${x1} ${y1}`; };
-  let s = `<svg viewBox="0 0 500 ${H}" class="pv-dev${pr.mode ? ' pv-anim' : ''}">
+  let s = `<svg viewBox="0 0 500 ${H}" class="pv-dev${pr.mode === 'breath' ? ' pv-breath' : pr.mode ? ' pv-anim' : ''}">
     <rect x="8" y="8" width="484" height="${H - 16}" rx="${pro ? 38 : 20}" fill="${pro ? '#8f94a0' : '#c4c7ce'}"/>
     <rect x="18" y="18" width="464" height="${H - 36}" rx="${pro ? 30 : 12}" fill="${pro ? '#1f1f24' : '#141417'}"/>`;
   KP.forEach(([cx, cy], i) => {
