@@ -32,6 +32,8 @@ It lives in your tray as a single exe under 3 MB using about 14 MB of RAM, with 
    ![Quick setup: a ready-made layout for the apps on your PC](docs/screenshots/quick-setup.webp)
 
 > **"Windows protected your PC"?** The exe isn't code-signed yet, so SmartScreen may warn you the first time. Click **More info > Run anyway**.
+>
+> **Code signing is coming soon.** PCPanel Revive has applied to the [SignPath Foundation](https://signpath.org) for free code signing of open-source projects. Once approved, releases will be signed through SignPath: free code signing provided by SignPath.io, certificate by SignPath Foundation.
 
 ### Bring over your old setup
 
