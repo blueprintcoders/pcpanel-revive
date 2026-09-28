@@ -13,8 +13,18 @@ pub struct Imported {
 }
 
 pub fn stock_path() -> std::path::PathBuf {
-    let base = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from).unwrap_or_default();
-    base.join("PCPanel Software").join("save.json")
+    use std::path::PathBuf;
+    if cfg!(windows) {
+        let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_default();
+        return base.join("PCPanel Software").join("save.json");
+    }
+    // On Linux, nvdweem/PCPanel's (same format): ~/.pcpanel if it's there, else ~/.config/pcpanel.
+    let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
+    let legacy = home.join(".pcpanel").join("save.json");
+    if legacy.exists() {
+        return legacy;
+    }
+    std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).unwrap_or_else(|| home.join(".config")).join("pcpanel").join("save.json")
 }
 
 /// `device_name(id)` turns a stock device id into a readable name when that device exists.

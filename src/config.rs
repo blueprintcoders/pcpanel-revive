@@ -461,8 +461,13 @@ impl Config {
 }
 
 pub fn path() -> PathBuf {
-    let base = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| ".".into());
-    base.join("pcpanel-revive").join("config.json")
+    // %APPDATA% on Windows; $XDG_CONFIG_HOME (usually ~/.config) on Linux.
+    let base = if cfg!(windows) {
+        std::env::var_os("APPDATA").map(PathBuf::from)
+    } else {
+        std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
+    };
+    base.unwrap_or_else(|| ".".into()).join("pcpanel-revive").join("config.json")
 }
 
 pub fn load() -> Result<Config, String> {

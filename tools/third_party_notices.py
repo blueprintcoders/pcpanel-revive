@@ -1,4 +1,4 @@
-"""Write THIRD-PARTY-NOTICES.txt: every library compiled into the Windows exe, with its license text.
+"""Write THIRD-PARTY-NOTICES.txt: every library compiled into the Windows exe or the Linux build, with its license text.
 
 Run from the repo root after changing dependencies:  python tools/third_party_notices.py
 """
@@ -6,10 +6,13 @@ import glob
 import os
 import subprocess
 
-TARGET = 'x86_64-pc-windows-msvc'
-tree = subprocess.run(
-    ['cargo', 'tree', '-e', 'normal,no-proc-macro', '--target', TARGET, '--prefix', 'none', '-f', '{p}|{l}|{r}'],
-    capture_output=True, text=True, check=True).stdout
+TARGETS = ['x86_64-pc-windows-msvc', 'x86_64-unknown-linux-gnu']
+tree = ''
+for target in TARGETS:
+    subprocess.run(['cargo', 'fetch', '--target', target], check=True)  # the license files come from the sources
+    tree += subprocess.run(
+        ['cargo', 'tree', '-e', 'normal,no-proc-macro', '--target', target, '--prefix', 'none', '-f', '{p}|{l}|{r}'],
+        capture_output=True, text=True, check=True).stdout
 
 crates = {}
 for line in tree.splitlines():
@@ -46,8 +49,9 @@ out = ['Third-party software in PCPanel Revive',
        '=' * 38,
        '',
        'PCPanel Revive is licensed under the GNU General Public License v3.0 or later (see LICENSE).',
-       'The Windows exe includes the following open-source libraries, under their own licenses.',
+       'The Windows exe and the Linux build include the following open-source libraries, under their own licenses.',
        'The settings window is shown by Microsoft Edge WebView2, which comes with Windows and is not included in the exe.',
+       "On Linux it uses the system's own GTK, WebKitGTK and tray libraries, which are not included in the build.",
        '',
        'Libraries',
        '---------',

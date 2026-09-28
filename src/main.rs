@@ -1,18 +1,29 @@
 #![cfg_attr(not(test), windows_subsystem = "windows")]
+// Windows and Linux each have their own version of these; the rest is shared.
+#[cfg_attr(target_os = "linux", path = "linux/audio.rs")]
 mod audio;
+#[cfg_attr(target_os = "linux", path = "linux/apps.rs")]
+mod apps;
+#[cfg_attr(target_os = "linux", path = "linux/notif.rs")]
+mod notif;
+#[cfg_attr(target_os = "linux", path = "linux/osd.rs")]
+mod osd;
+#[cfg_attr(windows, path = "win.rs")]
+#[cfg_attr(target_os = "linux", path = "linux/platform.rs")]
+mod platform;
+#[cfg_attr(target_os = "linux", path = "linux/shellhook.rs")]
+mod shellhook;
+#[cfg_attr(target_os = "linux", path = "linux/sys.rs")]
+mod sys;
 mod config;
 mod engine;
 mod import;
-mod apps;
 mod settings;
 mod hid;
 mod icon;
-mod notif;
 mod obs;
-mod shellhook;
-mod osd;
+mod osd_info;
 mod sonar;
-mod sys;
 mod update;
 mod viz;
 mod wavelink;
@@ -24,15 +35,18 @@ use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex, MutexGuard};
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
-use windows::core::w;
-use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS, LPARAM, WPARAM};
-use windows::Win32::System::Threading::{CreateMutexW, GetCurrentThreadId};
-use windows::Win32::UI::WindowsAndMessaging::*;
 
 pub const PORT: u16 = 47831;
-pub const WM_REFRESH: u32 = WM_APP;
-const WM_QUIT_APP: u32 = WM_APP + 1;
-pub const WM_OSD: u32 = WM_APP + 2;
+
+/// Messages for the tray thread.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum UiMsg {
+    /// Rebuild the tray menu and tooltip.
+    Refresh,
+    Quit,
+    /// Show the popup in `Shared::osd`.
+    Osd,
+}
 
 pub enum Msg {
     Hid(hid::Event),
@@ -90,11 +104,9 @@ pub struct Shared {
     last_log: String,
 }
 
-static UI_THREAD: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-
 /// Ask the tray thread to refresh the tray menu and tooltip.
 pub fn refresh_tray() {
-    unsafe { let _ = PostThreadMessageW(UI_THREAD.load(std::sync::atomic::Ordering::Relaxed), WM_REFRESH, WPARAM(0), LPARAM(0)); }
+    platform::post(UiMsg::Refresh);
 }
 
 /// Check GitHub for a newer version now; `manual` also reports "up to date" and errors.
@@ -123,7 +135,7 @@ pub fn install_update(shared: &Mutex<Shared>) {
     match update::install(&r) {
         Ok(()) => {
             log(shared, format!("updated to version {}", r.version));
-            unsafe { let _ = PostThreadMessageW(UI_THREAD.load(std::sync::atomic::Ordering::Relaxed), WM_QUIT_APP, WPARAM(0), LPARAM(0)); }
+            platform::post(UiMsg::Quit);
         }
         Err(e) => {
             log(shared, format!("update failed: {e}"));
@@ -139,8 +151,8 @@ pub fn lock(m: &Mutex<Shared>) -> MutexGuard<'_, Shared> {
 
 /// Local time as "2026-09-26 13:45:02".
 fn now() -> String {
-    let t = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
-    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond)
+    let (y, mo, d, h, mi, s) = platform::local_time();
+    format!("{y:04}-{mo:02}-{d:02} {h:02}:{mi:02}:{s:02}")
 }
 
 pub fn log_path() -> std::path::PathBuf {
@@ -190,23 +202,21 @@ pub fn report_problem(shared: &Mutex<Shared>) {
 }
 
 fn issue_url(shared: &Mutex<Shared>) -> String {
-    let windows = windows_registry::LOCAL_MACHINE.open(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion").map(|k| {
-        let get = |n: &str| k.get_string(n).unwrap_or_default();
-        format!("{} {} (build {})", get("ProductName"), get("DisplayVersion"), get("CurrentBuild"))
-    }).unwrap_or_default();
+    let os = platform::os_version();
     let (panel, log) = {
         let s = lock(shared);
         let panel = if s.connected { s.model.name() } else { "not connected" };
-        // The newest lines, with the Windows user name taken out of any paths.
-        let home = std::env::var("USERPROFILE").unwrap_or_default();
+        // The newest lines, with the user name taken out of any paths.
+        let (var, shown) = if cfg!(windows) { ("USERPROFILE", "%USERPROFILE%") } else { ("HOME", "~") };
+        let home = std::env::var(var).unwrap_or_default();
         let log: Vec<String> = s.log.iter().rev().take(15).rev()
-            .map(|l| if home.is_empty() { l.clone() } else { l.replace(&home, "%USERPROFILE%") })
+            .map(|l| if home.is_empty() { l.clone() } else { l.replace(&home, shown) })
             .collect();
         (panel, log.join("\n"))
     };
     let body = format!(
         "**What happened?**\n\n\n**What did you do just before?**\n\n\n**What did you expect?**\n\n\n\
-         ---\nPCPanel Revive {}\n{windows}\nPanel: {panel}\n\n\
+         ---\nPCPanel Revive {}\n{os}\nPanel: {panel}\n\n\
          Recent log (check nothing private is in it):\n```\n{log}\n```\n",
         env!("CARGO_PKG_VERSION")
     );
@@ -251,7 +261,8 @@ fn build_menu(shared: &Mutex<Shared>) -> Menu {
     }
     let _ = menu.append(&profiles);
     let _ = menu.append(&MenuItem::with_id("reload", "Reload config", true, None));
-    let _ = menu.append(&CheckMenuItem::with_id("autostart", "Start with Windows", true, sys::autostart_enabled(), None));
+    let start_with = if cfg!(windows) { "Start with Windows" } else { "Start when I log in" };
+    let _ = menu.append(&CheckMenuItem::with_id("autostart", start_with, true, sys::autostart_enabled(), None));
     let _ = menu.append(&MenuItem::with_id("report", "Report a problem", true, None));
     let _ = menu.append(&PredefinedMenuItem::separator());
     let _ = menu.append(&MenuItem::with_id("quit", "Quit", true, None));
@@ -268,31 +279,16 @@ fn main() {
     if std::env::args().any(|a| a == "--settings") {
         return settings();
     }
-    // Right after an update, the old version may still be closing: wait for it.
     let updated = std::env::args().any(|a| a == "--updated");
-    for tries in 0.. {
-        unsafe {
-            let m = CreateMutexW(None, true, w!("Local\\PCPanelReviveSingleInstance"));
-            if GetLastError() != ERROR_ALREADY_EXISTS {
-                break;
-            }
-            if !updated || tries >= 40 {
-                settings::ask_tray(false); // already running: it opens its settings window
-                return;
-            }
-            if let Ok(h) = m {
-                let _ = windows::Win32::Foundation::CloseHandle(h);
-            }
-        }
-        std::thread::sleep(std::time::Duration::from_millis(250));
+    if !platform::single_instance(updated) {
+        return;
     }
     update::cleanup();
     std::panic::set_hook(Box::new(|info| {
         let t = std::thread::current();
         log_file(&format!("CRASH in {} thread: {info}", t.name().unwrap_or("unnamed")));
     }));
-    // Crisp popup and window rendering on high-DPI screens.
-    unsafe { let _ = windows::Win32::UI::HiDpi::SetProcessDpiAwarenessContext(windows::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2); }
+    platform::init();
     let shared = Arc::new(Mutex::new(Shared { present: [true; CONTROLS], ..Default::default() }));
     let cfg = config::load().unwrap_or_else(|e| {
         log(&shared, format!("config error, using defaults (file untouched): {e}"));
@@ -302,9 +298,7 @@ fn main() {
     });
     crate::lock(&shared).config = cfg.clone();
 
-    let ui_thread = unsafe { GetCurrentThreadId() };
-    UI_THREAD.store(ui_thread, std::sync::atomic::Ordering::Relaxed);
-    let post = move |m: u32| unsafe { let _ = PostThreadMessageW(ui_thread, m, WPARAM(0), LPARAM(0)); };
+    let post = platform::post;
     let (tx, rx) = channel();
 
     hid::spawn(tx.clone(), shared.clone());
@@ -344,14 +338,6 @@ fn main() {
         });
     }
 
-    let tray: TrayIcon = TrayIconBuilder::new()
-        .with_icon(Icon::from_rgba(icon_rgba(), 32, 32).unwrap())
-        .with_tooltip(tooltip(&shared))
-        .with_menu(Box::new(build_menu(&shared)))
-        .with_menu_on_left_click(false)
-        .build()
-        .expect("tray icon");
-
     osd::init();
     shellhook::init(tx.clone());
 
@@ -366,8 +352,8 @@ fn main() {
         match id {
             "open" => open_settings(false),
             "reload" => { let _ = tx.send(Msg::Reload); }
-            "autostart" => { sys::set_autostart(!sys::autostart_enabled()); post(WM_REFRESH); }
-            "quit" => post(WM_QUIT_APP),
+            "autostart" => { sys::set_autostart(!sys::autostart_enabled()); post(UiMsg::Refresh); }
+            "quit" => post(UiMsg::Quit),
             "report" => report_problem(&menu_shared),
             "update" => {
                 let shared = menu_shared.clone();
@@ -377,45 +363,39 @@ fn main() {
         }
     }));
 
-    unsafe {
-        let mut msg = MSG::default();
-        while GetMessageW(&mut msg, None, 0, 0).as_bool() {
-            match msg.message {
-                WM_REFRESH => {
-                    let _ = tray.set_tooltip(Some(tooltip(&shared)));
-                    tray.set_menu(Some(Box::new(build_menu(&shared))));
-                }
-                WM_OSD => {
-                    let info = crate::lock(&shared).osd.take();
-                    if let Some(info) = info {
-                        osd::show(&info);
-                    }
-                }
-                WM_QUIT_APP => break,
-                _ => {
-                    let _ = TranslateMessage(&msg);
-                    DispatchMessageW(&msg);
+    // The tray icon is made on the tray thread once its loop is ready (on Linux, inside GTK).
+    let mut tray: Option<TrayIcon> = None;
+    platform::run(&shared, |m| {
+        let tray = tray.get_or_insert_with(|| TrayIconBuilder::new()
+            .with_icon(Icon::from_rgba(icon_rgba(), 32, 32).unwrap())
+            .with_tooltip(tooltip(&shared))
+            .with_menu(Box::new(build_menu(&shared)))
+            .with_menu_on_left_click(false)
+            .build()
+            .expect("tray icon"));
+        match m {
+            UiMsg::Refresh => {
+                let _ = tray.set_tooltip(Some(tooltip(&shared)));
+                tray.set_menu(Some(Box::new(build_menu(&shared))));
+            }
+            UiMsg::Osd => {
+                let info = crate::lock(&shared).osd.take();
+                if let Some(info) = info {
+                    osd::show(&info);
                 }
             }
+            UiMsg::Quit => return false,
         }
-    }
+        true
+    });
     // Leave the LEDs as they are; the device keeps its last state.
 }
 
 /// Settings window process; focuses the existing window instead of opening a second one.
 fn settings() {
-    unsafe {
-        let _m = CreateMutexW(None, true, w!("Local\\PCPanelReviveSettings"));
-        if GetLastError() == ERROR_ALREADY_EXISTS {
-            let title: Vec<u16> = settings::TITLE.encode_utf16().chain([0]).collect();
-            if let Ok(hwnd) = FindWindowW(None, windows::core::PCWSTR(title.as_ptr())) {
-                let _ = ShowWindow(hwnd, SW_RESTORE);
-                let _ = SetForegroundWindow(hwnd);
-            }
-            return;
-        }
+    if platform::settings_single_instance() {
+        settings::run();
     }
-    settings::run();
 }
 
 #[cfg(test)]
@@ -429,13 +409,14 @@ mod tests {
     #[test]
     fn issue_link_is_encoded_and_hides_the_user_name() {
         let shared = std::sync::Mutex::new(super::Shared::default());
-        let home = std::env::var("USERPROFILE").unwrap();
-        super::lock(&shared).log.push_back(format!("config error: {home}\\config.json & more"));
+        let (var, sep, shown) = if cfg!(windows) { ("USERPROFILE", "\\", "%25USERPROFILE%25%5C") } else { ("HOME", "/", "~%2F") };
+        let home = std::env::var(var).unwrap();
+        super::lock(&shared).log.push_back(format!("config error: {home}{sep}config.json & more"));
         let url = super::issue_url(&shared);
         assert!(url.starts_with("https://github.com/") && url.contains("/issues/new?body="));
         let body = url.split("body=").nth(1).unwrap();
         assert!(!body.contains(['&', ' ', '\n', '#']));
-        assert!(body.contains("%25USERPROFILE%25%5Cconfig.json%20%26%20more"));
+        assert!(body.contains(&format!("{shown}config.json%20%26%20more")));
         assert!(!body.contains(&super::url_encode(&home)));
     }
 

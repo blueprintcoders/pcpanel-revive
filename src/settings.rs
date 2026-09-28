@@ -1,4 +1,5 @@
-//! Settings window: a native window hosting the HTML UI (served by the tray app) in WebView2.
+//! Settings window: a native window hosting the HTML UI (served by the tray app) in WebView2 on Windows,
+//! WebKitGTK on Linux.
 //! Runs as its own process (`--settings`) so the tray app stays small.
 use crate::PORT;
 use std::rc::Rc;
@@ -8,12 +9,13 @@ use tao::dpi::LogicalSize;
 use tao::event::{Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tao::window::{Icon, Theme, WindowBuilder};
-use wry::{WebContext, WebViewBuilder, WebViewBuilderExtWindows};
+use wry::{WebContext, WebViewBuilder};
 
 pub const TITLE: &str = "PCPanel Revive Settings";
 
 /// Close the settings window if it's open, and wait (up to 3 s) until it has saved and gone.
 /// Returns whether it was open.
+#[cfg(windows)]
 pub fn close_window() -> bool {
     use windows::Win32::Foundation::{LPARAM, WPARAM};
     use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, PostMessageW, WM_CLOSE};
@@ -32,7 +34,19 @@ pub fn close_window() -> bool {
 
 enum UserEvent { Focus, Dirty(bool), Exit }
 
+#[cfg(target_os = "linux")]
+pub fn close_window() -> bool {
+    false
+}
+
 /// Ask the running tray app to open the settings window. Returns false when it isn't running.
+#[cfg(target_os = "linux")]
+pub fn ask_tray(devtools: bool) -> bool {
+    crate::platform::tell(crate::platform::TRAY_SOCKET, if devtools { "devtools" } else { "open" })
+}
+
+/// Ask the running tray app to open the settings window. Returns false when it isn't running.
+#[cfg(windows)]
 pub fn ask_tray(devtools: bool) -> bool {
     use windows::Win32::Foundation::{LPARAM, WPARAM};
     use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, PostMessageW};
@@ -83,8 +97,12 @@ pub fn run() {
     if devtools {
         browser_args += &format!(" --remote-debugging-port={port} --remote-debugging-address=127.0.0.1");
     }
-    let webview = WebViewBuilder::new_with_web_context(&mut ctx)
-        .with_additional_browser_args(browser_args)
+    let builder = WebViewBuilder::new_with_web_context(&mut ctx);
+    #[cfg(windows)]
+    let builder = wry::WebViewBuilderExtWindows::with_additional_browser_args(builder, browser_args);
+    #[cfg(target_os = "linux")]
+    let builder = { let _ = browser_args; builder.with_devtools(devtools) }; // WebKit's own inspector
+    let webview = builder
         .with_url(format!("http://127.0.0.1:{PORT}/"))
         .with_initialization_script(&format!("window.PCP_TOKEN = {:?};", token))
         .with_background_color((20, 20, 24, 255))
@@ -95,8 +113,20 @@ pub fn run() {
                 _ => UserEvent::Dirty(false),
             });
         })
-        .build(&window)
-        .expect("WebView2 is missing; install the Evergreen runtime from Microsoft");
+        ;
+    #[cfg(windows)]
+    let webview = webview.build(&window).expect("WebView2 is missing; install the Evergreen runtime from Microsoft");
+    #[cfg(target_os = "linux")]
+    let webview = {
+        use tao::platform::unix::WindowExtUnix;
+        use wry::WebViewBuilderExtUnix;
+        webview.build_gtk(window.default_vbox().expect("GTK window")).expect("WebKitGTK is missing (install libwebkit2gtk-4.1)")
+    };
+    #[cfg(target_os = "linux")]
+    {
+        let focus = event_loop.create_proxy();
+        crate::platform::on_settings_focus(move || { let _ = focus.send_event(UserEvent::Focus); });
+    }
 
     let dirty = Rc::new(Cell::new(false));
     let closing = Rc::new(Cell::new(false));

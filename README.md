@@ -43,6 +43,22 @@ If you used the official software on this PC, a banner offers to import your pro
 
 Moving to a new PC? Copy `%LOCALAPPDATA%\PCPanel Software\save.json` from the old one and use **Settings > Import a save.json file**.
 
+### Linux (experimental)
+
+A Linux build is on its way, following what [nvdweem/PCPanel](https://github.com/nvdweem/PCPanel) does on Linux. It's early: it builds and its audio control works, but it hasn't been tried with a panel on a Linux desktop yet, so reports are very welcome.
+
+1. **Download** `pcpanel-revive-linux-x86_64` and `70-pcpanel.rules` from the [Releases](../../releases) page, then `chmod +x pcpanel-revive-linux-x86_64`.
+2. **Let it reach the panel without root:**
+   ```bash
+   sudo cp 70-pcpanel.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger
+   ```
+3. **Install what it uses** (Ubuntu/Debian names): `libwebkit2gtk-4.1-0`, `libayatana-appindicator3-1` and `pulseaudio-utils` (for `pactl`; works with PipeWire too). Optional: `xdotool` for keystrokes and the app in front on X11, `playerctl` for media keys.
+4. **Run it.** Its tray icon has the same menu. Your settings live in `~/.config/pcpanel-revive/`. Coming from nvdweem/PCPanel? Its profiles can be imported the same way.
+
+Works on Linux: the panel, lights, profiles and the profile slider, app and device volume and mute, default device, moving an app to another device, new apps starting at their dial's level, most button actions, OBS, web requests, the settings window, lights off while locked or asleep, and updates.
+
+Not on Linux yet: the volume popup outside KDE, the cheat sheet, the music visualizer, "pulse with audio" lights, notification and taskbar alerts, app icons, and picking single displays. Keystrokes and the app in front need X11 (or KDE / Hyprland for the app in front); GNOME on Wayland doesn't let other apps see which window is in front. Voicemeeter, Wave Link and Sonar are Windows-only apps.
+
 ---
 
 ## Guide

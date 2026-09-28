@@ -137,7 +137,7 @@ fn connect() -> Result<WebSocket<TcpStream>, String> {
     Ok(ws)
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))] // Wave Link and its settings path are Windows-only
 mod tests {
     use super::*;
     use std::net::TcpListener;

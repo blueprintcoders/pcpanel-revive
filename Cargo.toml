@@ -7,14 +7,19 @@ license = "GPL-3.0-or-later"
 readme = "README.md"
 
 [dependencies]
-hidapi = { version = "2.6", default-features = false, features = ["windows-native"] }
+hidapi = { version = "2.6", default-features = false, features = ["windows-native", "linux-native-basic-udev"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tiny_http = "0.12"
-tray-icon = "0.25"
+# No libxdo: it only serves Copy/Paste menu items, which the tray menu doesn't have.
+tray-icon = { version = "0.25", default-features = false, features = ["libappindicator"] }
 tungstenite = "0.30"
 sha2 = "0.10"
 base64 = "0.22"
+wry = "0.57"
+tao = "0.37"
+
+[target.'cfg(windows)'.dependencies]
 windows-core = "0.62"
 windows-registry = "0.6"
 windows = { version = "0.62", features = [
@@ -44,8 +49,9 @@ windows = { version = "0.62", features = [
     "Win32_UI_Shell_PropertiesSystem",
     "Win32_UI_WindowsAndMessaging",
 ] }
-wry = "0.57"
-tao = "0.37"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
 
 [profile.release]
 opt-level = "s"

@@ -23,6 +23,13 @@ unsafe trait IPolicyConfig: IUnknown {
 }
 const CLSID_POLICY_CONFIG: GUID = GUID::from_u128(0x870af99c_171d_4f9e_af0d_e63df40c2bc9);
 
+/// A live peak meter (an app, a device).
+pub type Meter = IAudioMeterInformation;
+
+pub fn peak(m: &Meter) -> f32 {
+    unsafe { m.GetPeakValue().unwrap_or(0.0) }
+}
+
 pub struct Device {
     pub id: String,
     pub name: String,

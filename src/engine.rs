@@ -1,10 +1,9 @@
 //! Turns device events into actions. Owns the config; runs on its own COM thread.
 use crate::audio::{self, Audio, Session};
 use crate::config::{self, Action, Alert, Config, Light, Logo, Profile, Turn, CONTROLS, KNOBS};
-use windows::Win32::Media::Audio::Endpoints::IAudioMeterInformation;
 use crate::hid::{self, Event};
 use crate::osd::{self, Info};
-use crate::{log, obs::Obs, sonar::{self, Sonar}, sys, viz, wavelink::WaveLink, Msg, Shared, WM_OSD, WM_REFRESH};
+use crate::{log, obs::Obs, sonar::{self, Sonar}, sys, viz, wavelink::WaveLink, Msg, Shared, UiMsg};
 use serde_json::json;
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
@@ -31,7 +30,7 @@ enum Press { Single, Double, Hold }
 struct Engine {
     cfg: Config,
     shared: Arc<Mutex<Shared>>,
-    post: Box<dyn Fn(u32)>,
+    post: Box<dyn Fn(UiMsg)>,
     audio: Audio,
     obs: Obs,
     wavelink: WaveLink,
@@ -74,7 +73,7 @@ struct Engine {
     /// Latest known volume per control (for "follow the real volume" lights).
     levels: [Option<f32>; CONTROLS],
     /// Audio meters per control, refreshed every poll; smoothed peaks per frame.
-    meters: Vec<Vec<IAudioMeterInformation>>,
+    meters: Vec<Vec<audio::Meter>>,
     peaks: [f32; CONTROLS],
     connected: bool,
     /// Panel self-test: inputs don't run actions until this time.
@@ -109,7 +108,7 @@ struct Engine {
     moved_until: [Option<Instant>; CONTROLS],
 }
 
-pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Box<dyn Fn(u32)>) {
+pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Box<dyn Fn(UiMsg)>) {
     audio::com_init();
     let audio = match Audio::new() {
         Ok(a) => a,
@@ -556,7 +555,7 @@ impl Engine {
                 if c {
                     self.relight();
                 }
-                (self.post)(WM_REFRESH);
+                (self.post)(UiMsg::Refresh);
             }
             Msg::Hid(Event::Turn { index, value, initial }) => {
                 crate::lock(&self.shared).values[index] = value;
@@ -757,7 +756,7 @@ impl Engine {
             let heard = self.audio.sessions().iter().any(|s| {
                 (if any { !s.exe.is_empty() && s.exe != "system" } else { m(s) })
                     && !s.muted()
-                    && s.meter.as_ref().is_some_and(|mt| unsafe { mt.GetPeakValue().unwrap_or(0.0) } > 0.003)
+                    && s.meter.as_ref().is_some_and(|mt| audio::peak(mt) > 0.003)
             });
             if heard {
                 self.playing_until = Some(Instant::now() + Duration::from_secs(3));
@@ -840,7 +839,7 @@ impl Engine {
             if p.controls[i].light.mode != "meter" {
                 continue;
             }
-            let peak = self.meters.get(i).map_or(0.0, |ms| ms.iter().filter_map(|m| unsafe { m.GetPeakValue().ok() }).fold(0.0f32, f32::max));
+            let peak = self.meters.get(i).map_or(0.0, |ms| ms.iter().map(audio::peak).fold(0.0f32, f32::max));
             let target = if peak <= 0.0001 { 0.0 } else { ((20.0 * peak.log10() + 48.0) / 48.0).clamp(0.0, 1.0) };
             let cur = self.peaks[i];
             self.peaks[i] = if target > cur { target } else { cur * 0.8 + target * 0.2 };
@@ -942,7 +941,7 @@ impl Engine {
         crate::lock(&self.shared).config = self.cfg.clone();
         self.refresh_mutes();
         self.relight();
-        (self.post)(WM_REFRESH);
+        (self.post)(UiMsg::Refresh);
     }
 
     fn relight(&self) {
@@ -972,7 +971,7 @@ impl Engine {
 
     fn popup(&self, info: Info) {
         crate::lock(&self.shared).osd = Some(info);
-        (self.post)(WM_OSD);
+        (self.post)(UiMsg::Osd);
     }
 
     fn activate(&mut self, name: &str, persist: bool) {
@@ -1405,7 +1404,7 @@ impl Engine {
         self.levels = levels;
         // Meters for "pulse with audio" lights.
         let wants_meter = |i: usize| p.lighting.mode == "custom" && p.controls[i].light.mode == "meter";
-        let meters: Vec<Vec<IAudioMeterInformation>> = (0..CONTROLS).map(|i| {
+        let meters: Vec<Vec<audio::Meter>> = (0..CONTROLS).map(|i| {
             if !wants_meter(i) {
                 return vec![];
             }

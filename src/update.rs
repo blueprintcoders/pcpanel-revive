@@ -5,7 +5,8 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 pub const REPO: Option<&str> = option_env!("PCPANEL_REPO");
-const EXE: &str = "pcpanel-revive.exe";
+/// The release file for this platform.
+const EXE: &str = if cfg!(windows) { "pcpanel-revive.exe" } else { "pcpanel-revive-linux-x86_64" };
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Release {
@@ -43,7 +44,7 @@ pub fn check() -> Result<Option<Release>, String> {
     Ok(Some(Release {
         version: tag.trim_start_matches('v').into(),
         page: v["html_url"].as_str().unwrap_or("").into(),
-        exe_url: asset(EXE).ok_or("the new release has no pcpanel-revive.exe")?,
+        exe_url: asset(EXE).ok_or(format!("the new release has no {EXE}"))?,
         sha_url: asset(&format!("{EXE}.sha256")).ok_or("the new release has no checksum")?,
     }))
 }
@@ -59,6 +60,11 @@ pub fn install(r: &Release) -> Result<(), String> {
     if want != got {
         let _ = std::fs::remove_file(&new);
         return Err("the download didn't match its checksum, so it wasn't installed".into());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&new, std::fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
     }
     // Windows lets a running exe be renamed, just not replaced.
     let old = exe.with_extension("exe.old");

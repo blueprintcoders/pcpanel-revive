@@ -5,6 +5,7 @@
 use serde_json::Value;
 use std::io::{Read, Write};
 use std::net::TcpStream;
+#[cfg(windows)]
 use std::os::windows::process::CommandExt;
 use std::time::{Duration, Instant};
 
@@ -33,8 +34,11 @@ fn discover() -> Result<String, String> {
         return Err(NOT_RUNNING.into());
     }
     // GG answers over HTTPS with its own self-signed certificate, hence -k (only for this local hop).
-    let out = std::process::Command::new("curl.exe").args(["-sSfk", "--max-time", "3", &format!("https://{gg}/subApps")])
-        .creation_flags(crate::sys::NO_WINDOW).output().map_err(|e| format!("curl.exe: {e}"))?;
+    let mut curl = std::process::Command::new("curl");
+    curl.args(["-sSfk", "--max-time", "3", &format!("https://{gg}/subApps")]);
+    #[cfg(windows)]
+    curl.creation_flags(crate::sys::NO_WINDOW);
+    let out = curl.output().map_err(|e| format!("curl: {e}"))?;
     let apps: Value = serde_json::from_slice(&out.stdout).map_err(|_| NOT_RUNNING)?;
     let base = apps["subApps"]["sonar"]["metadata"]["webServerAddress"].as_str().unwrap_or_default().trim_end_matches('/');
     match base.strip_prefix("http://") {
