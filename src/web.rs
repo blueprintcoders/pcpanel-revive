@@ -40,6 +40,11 @@ fn handle(mut req: Request, tx: &Sender<Msg>, shared: &Arc<Mutex<Shared>>, audio
         return req.respond(Response::from_string("forbidden").with_status_code(403));
     }
     let url = req.url().split('?').next().unwrap_or("").to_string();
+    // Everything but the page itself needs the key the tray app gave its settings window.
+    let key = crate::TOKEN.get().map(String::as_str).unwrap_or("");
+    if url.starts_with("/api/") && (key.is_empty() || header(&req, "X-PCP").as_deref() != Some(key)) {
+        return req.respond(Response::from_string("open the settings from the PCPanel Revive tray icon").with_status_code(403));
+    }
     match (req.method(), url.as_str()) {
         (Method::Get, "/") => req.respond(
             Response::from_string(UI).with_header(Header::from_bytes("Content-Type", "text/html; charset=utf-8").unwrap()),

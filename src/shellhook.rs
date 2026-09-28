@@ -7,6 +7,11 @@ use windows::core::w;
 use windows::Win32::Foundation::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
+/// The hidden window's class: other copies of the app find the running one by it.
+pub const CLASS: windows::core::PCWSTR = w!("PCPanelReviveShellHook");
+/// Sent by another copy of the app: open the settings window (wParam 1 = with DevTools).
+pub const WM_OPEN_SETTINGS: u32 = WM_APP + 20;
+
 /// HSHELL_REDRAW | HSHELL_HIGHBIT: sent when a window flashes its taskbar button.
 const HSHELL_FLASH: u32 = 0x8006;
 
@@ -21,10 +26,10 @@ thread_local! {
 pub fn init(tx: Sender<Msg>) {
     unsafe {
         let hinst = windows::Win32::System::LibraryLoader::GetModuleHandleW(None).unwrap_or_default();
-        let class = WNDCLASSW { lpfnWndProc: Some(proc), hInstance: hinst.into(), lpszClassName: w!("PCPanelReviveShellHook"), ..Default::default() };
+        let class = WNDCLASSW { lpfnWndProc: Some(proc), hInstance: hinst.into(), lpszClassName: CLASS, ..Default::default() };
         RegisterClassW(&class);
         // Shell hooks need a real top-level window (not message-only); it's never shown.
-        let Ok(hwnd) = CreateWindowExW(WS_EX_TOOLWINDOW, w!("PCPanelReviveShellHook"), w!(""), WS_POPUP, 0, 0, 0, 0, None, None, Some(hinst.into()), None) else { return };
+        let Ok(hwnd) = CreateWindowExW(WS_EX_TOOLWINDOW, CLASS, w!(""), WS_POPUP, 0, 0, 0, 0, None, None, Some(hinst.into()), None) else { return };
         HWND_RAW.store(hwnd.0 as isize, std::sync::atomic::Ordering::Relaxed);
         HOOK_MSG.set(RegisterWindowMessageW(w!("SHELLHOOK")));
         TX.with(|t| *t.borrow_mut() = Some(tx));
@@ -33,6 +38,10 @@ pub fn init(tx: Sender<Msg>) {
 }
 
 unsafe extern "system" fn proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    if msg == WM_OPEN_SETTINGS {
+        crate::open_settings(wp.0 != 0);
+        return LRESULT(0);
+    }
     if msg == HOOK_MSG.get() && msg != 0 && wp.0 as u32 == HSHELL_FLASH {
         let mut pid = 0;
         GetWindowThreadProcessId(HWND(lp.0 as _), Some(&mut pid));

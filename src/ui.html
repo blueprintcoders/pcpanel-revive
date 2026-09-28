@@ -245,6 +245,9 @@ button.danger{background:var(--bad);border-color:var(--bad);color:#fff}
 <input type="file" id="browse" accept=".exe" multiple hidden>
 <script>
 const $ = s => document.querySelector(s);
+// Every request carries the key the tray app gave this window; the settings server refuses anything without it.
+const nativeFetch = window.fetch.bind(window);
+window.fetch = (url, opts = {}) => nativeFetch(url, {...opts, headers: {...(opts.headers || {}), 'X-PCP': window.PCP_TOKEN || ''}});
 const KNOBS = 5;
 const TURN = {none:[], app:[['apps','apps']], device:[['device','text','devices']], obs:[['source','text']],
   voicemeeter:[['param','text',null,'Strip[0].Gain'],['min_db','num'],['max_db','num']], command:[['cmd','text',null,'uses {value} 0-100']], brightness:[],
@@ -1661,7 +1664,10 @@ async function poll() {
       lastCfgJson = j; cfg = s.config; lastSaved = JSON.stringify(cfg); render(); offerSetup();
       if (!$('#status').textContent) $('#status').textContent = 'All changes saved';
     }
-  } catch (e) { $('#conn').textContent = 'background app not running'; $('#dot').className = 'dot'; }
+  } catch (e) {
+    $('#conn').textContent = window.PCP_TOKEN ? 'background app not running' : 'Open the settings from the PCPanel Revive tray icon';
+    $('#dot').className = 'dot';
+  }
   setTimeout(poll, 300);
 }
 let displayList = [], notifSources = [];

@@ -1,7 +1,6 @@
 //! Settings window: a native window hosting the HTML UI (served by the tray app) in WebView2.
 //! Runs as its own process (`--settings`) so the tray app stays small.
 use crate::PORT;
-use std::net::TcpStream;
 use std::rc::Rc;
 use std::cell::Cell;
 use std::time::Duration;
@@ -33,20 +32,36 @@ pub fn close_window() -> bool {
 
 enum UserEvent { Focus, Dirty(bool), Exit }
 
-fn tray_running() -> bool {
-    TcpStream::connect_timeout(&([127, 0, 0, 1], PORT).into(), Duration::from_millis(200)).is_ok()
+/// Ask the running tray app to open the settings window. Returns false when it isn't running.
+pub fn ask_tray(devtools: bool) -> bool {
+    use windows::Win32::Foundation::{LPARAM, WPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, PostMessageW};
+    match unsafe { FindWindowW(crate::shellhook::CLASS, None) } {
+        Ok(hwnd) if !hwnd.is_invalid() => unsafe {
+            PostMessageW(Some(hwnd), crate::shellhook::WM_OPEN_SETTINGS, WPARAM(devtools as usize), LPARAM(0)).is_ok()
+        },
+        _ => false,
+    }
 }
 
 pub fn run() {
-    if !tray_running() {
-        if let Ok(exe) = std::env::current_exe() {
-            let _ = std::process::Command::new(exe).spawn();
+    let devtools = std::env::args().any(|a| a == "--devtools");
+    // Only the tray app hands out the key to its settings server, so a window started any other way
+    // asks the tray app to open one (starting it first if needed).
+    let Ok(token) = std::env::var("PCP_TOKEN") else {
+        if !ask_tray(devtools) {
+            if let Ok(exe) = std::env::current_exe() {
+                let _ = std::process::Command::new(exe).spawn();
+            }
+            for _ in 0..50 {
+                std::thread::sleep(Duration::from_millis(100));
+                if ask_tray(devtools) {
+                    break;
+                }
+            }
         }
-        for _ in 0..30 {
-            if tray_running() { break }
-            std::thread::sleep(Duration::from_millis(100));
-        }
-    }
+        return;
+    };
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let window = WindowBuilder::new()
         .with_title(TITLE)
@@ -63,7 +78,6 @@ pub fn run() {
     // `--devtools` opens Chromium's DevTools protocol on localhost so tools (e.g. the Chrome DevTools MCP
     // server) can drive this window without the real mouse and keyboard. Off by default:
     // anything on this PC could control the page while it's on.
-    let devtools = std::env::args().any(|a| a == "--devtools");
     let port = std::env::var("PCP_DEVTOOLS_PORT").unwrap_or_else(|_| "9222".into());
     let mut browser_args = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection".to_string(); // wry's defaults
     if devtools {
@@ -72,6 +86,7 @@ pub fn run() {
     let webview = WebViewBuilder::new_with_web_context(&mut ctx)
         .with_additional_browser_args(browser_args)
         .with_url(format!("http://127.0.0.1:{PORT}/"))
+        .with_initialization_script(&format!("window.PCP_TOKEN = {:?};", token))
         .with_background_color((20, 20, 24, 255))
         .with_ipc_handler(move |req| {
             let _ = proxy.send_event(match req.body().as_str() {

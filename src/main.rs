@@ -165,9 +165,23 @@ pub fn log(shared: &Mutex<Shared>, msg: String) {
     log_file(&msg);
 }
 
-fn open_settings() {
+/// The key to the settings server, made fresh each time the tray app starts and given only to the
+/// settings windows it opens, so no other program on the PC can read or change the settings.
+pub static TOKEN: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+fn new_token() -> String {
+    use std::hash::BuildHasher;
+    (0..4u64).map(|i| format!("{:016x}", std::collections::hash_map::RandomState::new().hash_one(i))).collect()
+}
+
+pub fn open_settings(devtools: bool) {
     if let Ok(exe) = std::env::current_exe() {
-        let _ = std::process::Command::new(exe).arg("--settings").spawn();
+        let mut cmd = std::process::Command::new(exe);
+        cmd.arg("--settings").env("PCP_TOKEN", TOKEN.get().map_or("", |t| t.as_str()));
+        if devtools {
+            cmd.arg("--devtools");
+        }
+        let _ = cmd.spawn();
     }
 }
 
@@ -215,7 +229,7 @@ fn main() {
                 break;
             }
             if !updated || tries >= 40 {
-                open_settings();
+                settings::ask_tray(false); // already running: it opens its settings window
                 return;
             }
             if let Ok(h) = m {
@@ -246,11 +260,12 @@ fn main() {
     let (tx, rx) = channel();
 
     hid::spawn(tx.clone(), shared.clone());
+    TOKEN.get_or_init(new_token);
     web::spawn(tx.clone(), shared.clone());
     // An open settings window still belongs to the old version: swap it for one of this version.
     // It saves any pending change as it closes, which this version's server now receives.
     if updated && settings::close_window() {
-        open_settings();
+        open_settings(false);
     }
     {
         // The engine restarts itself after a crash, reloading the config from disk.
@@ -294,14 +309,14 @@ fn main() {
 
     TrayIconEvent::set_event_handler(Some(|e| {
         if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = e {
-            open_settings();
+            open_settings(false);
         }
     }));
     let menu_shared = shared.clone();
     MenuEvent::set_event_handler(Some(move |e: MenuEvent| {
         let id = e.id.0.as_str();
         match id {
-            "open" => open_settings(),
+            "open" => open_settings(false),
             "reload" => { let _ = tx.send(Msg::Reload); }
             "autostart" => { sys::set_autostart(!sys::autostart_enabled()); post(WM_REFRESH); }
             "quit" => post(WM_QUIT_APP),
