@@ -1694,6 +1694,7 @@ dependencies = [
  "tiny_http",
  "tray-icon",
  "tungstenite",
+ "webkit2gtk",
  "windows",
  "windows-core",
  "windows-registry",

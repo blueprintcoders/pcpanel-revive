@@ -76,6 +76,14 @@ pub fn run() {
         }
         return;
     };
+    // WebKitGTK's GPU drawing (DMA-BUF buffers, OpenGL compositing) goes blank or crashes on many VMs,
+    // remote desktops and NVIDIA drivers; this page doesn't need it. Either can still be set by hand.
+    #[cfg(target_os = "linux")]
+    for var in ["WEBKIT_DISABLE_DMABUF_RENDERER", "WEBKIT_DISABLE_COMPOSITING_MODE"] {
+        if std::env::var_os(var).is_none() {
+            std::env::set_var(var, "1");
+        }
+    }
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let window = WindowBuilder::new()
         .with_title(TITLE)
@@ -120,7 +128,15 @@ pub fn run() {
     let webview = {
         use tao::platform::unix::WindowExtUnix;
         use wry::WebViewBuilderExtUnix;
-        webview.build_gtk(window.default_vbox().expect("GTK window")).expect("WebKitGTK is missing (install libwebkit2gtk-4.1)")
+        use webkit2gtk::WebViewExt;
+        use wry::WebViewExtUnix;
+        let webview = webview.build_gtk(window.default_vbox().expect("GTK window")).expect("WebKitGTK is missing (install libwebkit2gtk-4.1)");
+        // WebKit draws the page in a separate process; if that stops, reload rather than stay blank.
+        webview.webview().connect_web_process_terminated(|page, reason| {
+            crate::log_file(&format!("settings page stopped ({reason:?}), reloading it"));
+            page.reload();
+        });
+        webview
     };
     #[cfg(target_os = "linux")]
     {
