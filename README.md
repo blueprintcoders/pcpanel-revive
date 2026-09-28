@@ -197,7 +197,9 @@ cargo build --release
 cargo test --release
 ```
 
-The exe is `target\release\pcpanel-revive.exe`. Pushing a `v*` tag builds it on GitHub Actions and attaches it to a release.
+The exe is `target\release\pcpanel-revive.exe`. Pushing a `v*` tag builds it on GitHub Actions and publishes a release with the exe, its checksum (the app's updater checks it) and the third-party notices, using that version's section of [CHANGELOG.md](CHANGELOG.md) as the release notes.
+
+After changing dependencies, run `python tools/third_party_notices.py` to refresh [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).
 
 ### How it works
 
@@ -220,3 +222,5 @@ The USB protocol details come from the community projects [nvdweem/PCPanel](http
 PCPanel Revive is free software, released under the [GNU General Public License v3.0](LICENSE) or (at your option) any later version. You can use, study, share and change it. If you distribute a modified version, it has to stay open source under the same license.
 
 It comes with no warranty.
+
+The exe also includes open-source libraries under their own licenses (mostly MIT and Apache-2.0); they're listed, with their license texts, in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).
