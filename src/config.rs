@@ -225,6 +225,12 @@ pub enum Turn {
         #[serde(default)] mix: String,
         #[serde(default)] name: String,
     },
+    /// SteelSeries Sonar: a channel (master, game, chatRender, media, aux, chatCapture); in streamer mode,
+    /// in the monitoring or streaming mix, or both.
+    Sonar {
+        #[serde(default)] channel: String,
+        #[serde(default)] mix: String,
+    },
 }
 fn db_min() -> f32 { -60.0 }
 fn steps() -> u8 { 24 }
@@ -286,6 +292,11 @@ pub enum Action {
         #[serde(default)] channel: String,
         #[serde(default)] mix: String,
         #[serde(default)] name: String,
+    },
+    /// Toggle mute on a SteelSeries Sonar channel (same targets as the turn).
+    SonarMute {
+        #[serde(default)] channel: String,
+        #[serde(default)] mix: String,
     },
 }
 fn half() -> u8 { 50 }

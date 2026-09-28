@@ -11,6 +11,7 @@ mod notif;
 mod obs;
 mod shellhook;
 mod osd;
+mod sonar;
 mod sys;
 mod update;
 mod viz;

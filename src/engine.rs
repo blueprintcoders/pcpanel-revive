@@ -4,7 +4,7 @@ use crate::config::{self, Action, Alert, Config, Light, Logo, Profile, Turn, CON
 use windows::Win32::Media::Audio::Endpoints::IAudioMeterInformation;
 use crate::hid::{self, Event};
 use crate::osd::{self, Info};
-use crate::{log, obs::Obs, sys, viz, wavelink::WaveLink, Msg, Shared, WM_OSD, WM_REFRESH};
+use crate::{log, obs::Obs, sonar::{self, Sonar}, sys, viz, wavelink::WaveLink, Msg, Shared, WM_OSD, WM_REFRESH};
 use serde_json::json;
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
@@ -35,6 +35,7 @@ struct Engine {
     audio: Audio,
     obs: Obs,
     wavelink: WaveLink,
+    sonar: Sonar,
     sent: [Option<u8>; CONTROLS],
     pending: [Option<u8>; CONTROLS],
     last_cmd: [Option<Instant>; CONTROLS],
@@ -116,7 +117,7 @@ pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Bo
     };
     let http = http_worker(shared.clone());
     let mut e = Engine {
-        cfg, shared, post, audio, obs: Obs::default(), wavelink: WaveLink::default(), http, shift: None, pressing: Press::Single, slider_seg: None,
+        cfg, shared, post, audio, obs: Obs::default(), wavelink: WaveLink::default(), sonar: Sonar::default(), http, shift: None, pressing: Press::Single, slider_seg: None,
         sheet_knob: None, sheet_until: None, viz: None, viz_frame: viz::Frame::default(), viz_buf: vec![], viz_retry: None, playing: false, playing_until: None, moved_until: [None; CONTROLS], idle: [false; 3], known_pids: None,
         sent: [None; CONTROLS], pending: [None; CONTROLS], last_cmd: [None; CONTROLS], muted: [false; CONTROLS],
         press_deadline: [None; KNOBS], hold_deadline: [None; KNOBS], hold_fired: [false; KNOBS], debounce: [Debounce::default(); KNOBS],
@@ -193,6 +194,11 @@ fn http_worker(shared: Arc<Mutex<Shared>>) -> Sender<(usize, [String; 4])> {
         }
     });
     tx
+}
+
+/// What GG calls a Sonar channel.
+fn sonar_name(channel: &str) -> &str {
+    sonar::CHANNELS.iter().find(|(id, _)| *id == channel).map_or(channel, |(_, name)| name)
 }
 
 /// Dimmer placeholders: {value} 0-100, {value255} 0-255, {bri} 1-254 (Philips Hue), {on} true/false.
@@ -392,6 +398,7 @@ fn turn_text(t: &Turn) -> String {
         Turn::Keys { up, down, .. } => format!("Keys {down} / {up}"),
         Turn::Http { .. } => "Smart light".into(),
         Turn::WaveLink { name, .. } => format!("Wave Link: {name}"),
+        Turn::Sonar { channel, .. } => format!("Sonar: {}", sonar_name(channel)),
     }
 }
 
@@ -441,6 +448,7 @@ fn action_text(a: &Action) -> String {
         Action::Shift { profile } => format!("Shift to {profile}"),
         Action::CheatSheet => "This cheat sheet".into(),
         Action::WaveLinkMute { name, .. } => format!("Mute {name}"),
+        Action::SonarMute { channel, .. } => format!("Mute Sonar {}", sonar_name(channel)),
     }
 }
 
@@ -1055,6 +1063,10 @@ impl Engine {
                 self.wavelink.set_level(&channel, &mix, v)?;
                 self.osd(Info { title: label.unwrap_or(name), icon: osd::Icon::Speaker, level: Some(v), ..Default::default() });
             }
+            Turn::Sonar { channel, mix } => {
+                self.sonar.set_level(&channel, &mix, v)?;
+                self.osd(Info { title: label.unwrap_or_else(|| format!("Sonar {}", sonar_name(&channel))), icon: osd::Icon::Speaker, level: Some(v), ..Default::default() });
+            }
             Turn::Http { method, url, headers, body } => {
                 let _ = self.http.send((i, [method, fill_level(&url, v), headers, fill_level(&body, v)]));
                 self.osd(Info { title: label.unwrap_or("Lights".into()), icon: osd::Icon::Light, level: Some(v), ..Default::default() });
@@ -1288,6 +1300,10 @@ impl Engine {
             Action::WaveLinkMute { channel, mix, name } => {
                 let muted = self.wavelink.toggle_mute(&channel, &mix)?;
                 self.osd(Info { title: name, icon: osd::Icon::Speaker, muted, hint: if muted { "Muted" } else { "Unmuted" }.into(), ..Default::default() });
+            }
+            Action::SonarMute { channel, mix } => {
+                let muted = self.sonar.toggle_mute(&channel, &mix)?;
+                self.osd(Info { title: format!("Sonar {}", sonar_name(&channel)), icon: osd::Icon::Speaker, muted, hint: if muted { "Muted" } else { "Unmuted" }.into(), ..Default::default() });
             }
             Action::CheatSheet => {
                 let held = self.pressing == Press::Hold;

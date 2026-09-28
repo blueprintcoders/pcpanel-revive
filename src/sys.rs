@@ -7,7 +7,7 @@ use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 use windows::Win32::System::Registry::*;
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 
-const NO_WINDOW: u32 = 0x0800_0000;
+pub const NO_WINDOW: u32 = 0x0800_0000;
 
 fn vk(name: &str) -> Option<(u16, bool)> {
     let n = name.trim().to_lowercase();

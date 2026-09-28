@@ -251,20 +251,21 @@ window.fetch = (url, opts = {}) => nativeFetch(url, {...opts, headers: {...(opts
 const KNOBS = 5;
 const TURN = {none:[], app:[['apps','apps']], device:[['device','text','devices']], obs:[['source','text']],
   voicemeeter:[['param','text',null,'Strip[0].Gain'],['min_db','num'],['max_db','num']], command:[['cmd','text',null,'uses {value} 0-100']], brightness:[],
-  keys:[['up','text','keys','scroll_down'],['down','text','keys','scroll_up'],['steps','num']], wavelink:[['target','wavelink']],
+  keys:[['up','text','keys','scroll_down'],['down','text','keys','scroll_up'],['steps','num']], wavelink:[['target','wavelink']], sonar:[['target','sonar']],
   http:[['method','text','methods'],['url','text',null,'http://homeassistant.local:8123/api/services/light/turn_on'],
     ['headers','area',null,'Authorization: Bearer ...\nContent-Type: application/json'],['body','area',null,'{"entity_id": "light.desk", "brightness_pct": {value}}']]};
 const TURN_LABEL = {none:'Nothing', app:'App volume', device:'Device volume', obs:'OBS source volume', voicemeeter:'Voicemeeter parameter', command:'Run command', brightness:'LED brightness',
   keys:'Keystrokes as you turn (scroll, zoom, brush size)', http:'Smart light dimmer / web request',
-  wavelink:'Elgato Wave Link level (experimental)'};
-const TURN_DEFAULTS = {keys: {up: 'scroll_down', down: 'scroll_up', steps: 24}, http: {method: 'POST'}};
+  wavelink:'Elgato Wave Link level (experimental)', sonar:'SteelSeries Sonar level (experimental)'};
+const TURN_DEFAULTS = {sonar: {channel: 'game', mix: 'monitoring'}, keys: {up: 'scroll_down', down: 'scroll_up', steps: 24}, http: {method: 'POST'}};
 // One-click starting points for the dimmer; the user fills in their own address, token and light.
 const DIMMER_TEMPLATES = {
   'Home Assistant': {method: 'POST', url: 'http://homeassistant.local:8123/api/services/light/turn_on',
     headers: 'Authorization: Bearer YOUR_LONG_LIVED_TOKEN\nContent-Type: application/json', body: '{"entity_id": "light.YOUR_LIGHT", "brightness_pct": {value}}'},
   'Philips Hue': {method: 'PUT', url: 'http://YOUR_BRIDGE_IP/api/YOUR_HUE_USERNAME/lights/1/state', headers: '', body: '{"on": {on}, "bri": {bri}}'},
 };
-const TURN_HINT = {wavelink: 'Needs Elgato Wave Link 3 running on this PC. Pick a channel (its main fader), a channel in one mix (e.g. Music in your Stream mix only), or a whole mix. This is new and not yet tested with Wave Link itself: please report how it works.',
+const SONAR_HINT = 'Needs SteelSeries GG with Sonar running on this PC. The mix only matters in Sonar\'s streamer mode. This is new and not yet tested with Sonar itself: please report how it works.';
+const TURN_HINT = {sonar: SONAR_HINT, wavelink: 'Needs Elgato Wave Link 3 running on this PC. Pick a channel (its main fader), a channel in one mix (e.g. Music in your Stream mix only), or a whole mix. This is new and not yet tested with Wave Link itself: please report how it works.',
   http: 'Sends the level every time you turn it. In the URL and body, {value} becomes 0-100, {value255} 0-255, {bri} 1-254 (Hue) and {on} true or false. In Home Assistant, make a long-lived access token under your profile > Security.', keys: 'Each step sends one keystroke to the app in front: scroll a page, zoom (Ctrl + wheel), change brush size in Photoshop with ] and [, or step through a video timeline with the arrow keys. Steps = how many keystrokes the full travel sends.'};
 const ACT = {mute_turn:[], mute_app:[['apps','apps']], mute_device:[['device','text','devices']], set_default:[['device','text','devices']],
   cycle_default:[['devices','list','devices']], keys:[['keys','text','keys','ctrl+shift+m']], run:[['cmd','text',null,'notepad.exe']], kill:[['process','app']],
@@ -277,10 +278,10 @@ const ACT = {mute_turn:[], mute_app:[['apps','apps']], mute_device:[['device','t
   mute_others:[['apps','apps']],
   http:[['method','text','methods'],['url','text',null,'http://homeassistant.local:8123/api/services/light/toggle'],
     ['headers','area',null,'Authorization: Bearer ...\nContent-Type: application/json'],['body','area',null,'{"entity_id": "light.desk"}']],
-  app_output:[['apps','apps'],['device','text','devices']], shift:[['profile','text','profiles']], cheat_sheet:[], wavelink_mute:[['target','wavelink']]};
-const ACT_HINT = {cheat_sheet: 'Shows what every knob and slider does, on screen. Under Hold: while you hold the knob. Under a press: for 8 seconds, or until you press again. After a Shift action, it shows the other profile.',
+  app_output:[['apps','apps'],['device','text','devices']], shift:[['profile','text','profiles']], cheat_sheet:[], wavelink_mute:[['target','wavelink']], sonar_mute:[['target','sonar']]};
+const ACT_HINT = {sonar_mute: SONAR_HINT, cheat_sheet: 'Shows what every knob and slider does, on screen. Under Hold: while you hold the knob. Under a press: for 8 seconds, or until you press again. After a Shift action, it shows the other profile.',
   shift: 'Under Hold: the other profile works only while you hold this knob, like a Shift key. Under a press: it stays until you press this knob again. Set up the other profile\'s knobs and sliders as usual.'};
-const ACT_DEFAULTS = {set_app_volume: {level: 20}, set_device_volume: {level: 50}, http: {method: 'POST'}, app_output: {device: 'default'}};
+const ACT_DEFAULTS = {sonar_mute: {channel: 'game', mix: 'monitoring'}, set_app_volume: {level: 20}, set_device_volume: {level: 50}, http: {method: 'POST'}, app_output: {device: 'default'}};
 const ACT_LABEL = {mute_turn:'Mute what this dial controls', mute_app:'Toggle app mute', mute_device:'Toggle device mute', set_default:'Set default device',
   cycle_default:'Cycle default devices', keys:'Keystroke / media key', run:'Run program', kill:'Kill process', profile:'Switch profile', next_profile:'Next profile',
   obs_scene:'OBS: switch scene', obs_mute:'OBS: toggle mute', obs_record:'OBS: toggle recording', obs_stream:'OBS: toggle stream', voicemeeter:'Voicemeeter script',
@@ -288,7 +289,7 @@ const ACT_LABEL = {mute_turn:'Mute what this dial controls', mute_app:'Toggle ap
   lock_pc:'Lock PC', monitor_off:'Turn displays off/on', lights_toggle:'Turn panel lights on/off',
   set_app_volume:'Set app volume to a level', set_device_volume:'Set device volume to a level', mute_others:'Focus mode: mute all other apps',
   http:'Web request (Home Assistant, webhooks)', app_output:'Send app to audio device', shift:'Shift: use another profile while held', cheat_sheet:'Show a cheat sheet of every control',
-  wavelink_mute:'Wave Link: toggle mute (experimental)'};
+  wavelink_mute:'Wave Link: toggle mute (experimental)', sonar_mute:'Sonar: toggle mute (experimental)'};
 const SPECIAL = {focused: ['Focused window', 'Whatever app is in front'], system: ['System sounds', 'Windows notification sounds'], unmapped: ['Everything else', 'Every app not on another control']};
 
 let cfg = null, dirty = false, tab = 'controls', lastValues = [], lastCfgJson = '', appInfo = {};
@@ -524,7 +525,7 @@ const ACT_GROUP = {mute_turn: 'Audio', mute_app: 'Audio', mute_device: 'Audio', 
   obs_scene: 'OBS', obs_mute: 'OBS', obs_record: 'OBS', obs_stream: 'OBS', voicemeeter: 'Voicemeeter',
   mute_mic: 'Audio', focus_app: 'Keyboard & apps', open: 'Keyboard & apps', type_text: 'Keyboard & apps',
   lock_pc: 'System', monitor_off: 'System', lights_toggle: 'Panel',
-  set_app_volume: 'Audio', set_device_volume: 'Audio', mute_others: 'Audio', app_output: 'Audio', http: 'Web & smart home', shift: 'Profiles', cheat_sheet: 'Panel', wavelink_mute: 'Elgato Wave Link'};
+  set_app_volume: 'Audio', set_device_volume: 'Audio', mute_others: 'Audio', app_output: 'Audio', http: 'Web & smart home', shift: 'Profiles', cheat_sheet: 'Panel', wavelink_mute: 'Elgato Wave Link', sonar_mute: 'SteelSeries Sonar'};
 
 function text(o, k, list, ph) {
   if (list) return comboFree(() => o[k] ?? '', v => { o[k] = v; touch(); }, listOptions(list), {placeholder: ph, record: list === 'keys'});
@@ -653,7 +654,7 @@ $('#browse').onchange = e => {
 function fields(o, spec) {
   const nice = k => ({url: 'URL', level: 'Level', min_db: 'Min dB', max_db: 'Max dB', cmd: 'Command', keys: 'Keys', up: 'Right / up', down: 'Left / down', target: 'Target'}[k] || k[0].toUpperCase() + k.slice(1));
   return spec.map(([k, kind, list, ph]) => row(kind === 'check' ? '' : kind === 'displays' ? 'Displays' : nice(k),
-    kind === 'pct' ? [num(o, k, 0, 100), '%'] : kind === 'area' ? area(o, k, ph) : kind === 'displays' ? displayPicker(o, k) : kind === 'wavelink' ? wavePicker(o) : kind === 'check' ? check(o, k, ph) : kind === 'apps' ? appChips(o, k) : kind === 'app' ? appOne(o, k) : kind === 'list' ? chips(o, k, list) : kind === 'num' ? num(o, k) : text(o, k, list, ph)));
+    kind === 'pct' ? [num(o, k, 0, 100), '%'] : kind === 'area' ? area(o, k, ph) : kind === 'displays' ? displayPicker(o, k) : kind === 'wavelink' ? wavePicker(o) : kind === 'sonar' ? sonarPicker(o) : kind === 'check' ? check(o, k, ph) : kind === 'apps' ? appChips(o, k) : kind === 'app' ? appOne(o, k) : kind === 'list' ? chips(o, k, list) : kind === 'num' ? num(o, k) : text(o, k, list, ph)));
 }
 // ---- controls tab: device picture + single-control editor ----
 let sel = 0, muted = [], levels = [], present = [], peaks = [], alertsOn = [], openFolds = new Set();
@@ -701,6 +702,7 @@ function target(c) {
   if (t.type === 'brightness') return {name: 'Brightness', glyph: 'sun'};
   if (t.type === 'http') return {name: 'Smart light', glyph: 'sun'};
   if (t.type === 'wavelink') return {name: t.name || 'Wave Link', glyph: 'speaker'};
+  if (t.type === 'sonar') return {name: 'Sonar ' + (SONAR_CHANNELS[t.channel] || '?'), glyph: 'speaker'};
   if (t.type === 'keys') return {name: /scroll/.test(t.up || '') ? (/ctrl/.test(t.up) ? 'Zoom' : 'Scroll') : `Keys ${t.down || '?'} ${t.up || '?'}`, glyph: 'dot'};
   if (t.type === 'app' && t.apps && SPECIAL[t.apps[0]]) return {name: SPECIAL[t.apps[0]][0], glyph: 'star'};
   const a = c.press && c.press[0];
@@ -1681,6 +1683,13 @@ async function loadDevices() {
     notifSources = await (await fetch('/api/notif-sources')).json();
   } catch (e) {}
 }
+// ---- SteelSeries Sonar: a fixed set of channels, and in streamer mode two mixes ----
+const SONAR_CHANNELS = {master: 'Master', game: 'Game', chatRender: 'Chat', media: 'Media', aux: 'Aux', chatCapture: 'Mic'};
+function sonarPicker(o) {
+  return [select(o, 'channel', SONAR_CHANNELS),
+    select(o, 'mix', {monitoring: 'Personal mix', streaming: 'Stream mix', both: 'Both mixes'})];
+}
+
 // ---- Elgato Wave Link: channels and mixes, fetched live ----
 let waveTargets = null;
 async function loadWave() {
