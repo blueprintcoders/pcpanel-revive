@@ -756,7 +756,7 @@ impl Engine {
             let heard = self.audio.sessions().iter().any(|s| {
                 (if any { !s.exe.is_empty() && s.exe != "system" } else { m(s) })
                     && !s.muted()
-                    && s.meter.as_ref().is_some_and(|mt| audio::peak(mt) > 0.003)
+                    && s.playing()
             });
             if heard {
                 self.playing_until = Some(Instant::now() + Duration::from_secs(3));

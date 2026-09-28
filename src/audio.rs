@@ -200,6 +200,10 @@ impl Session {
     pub fn muted(&self) -> bool {
         unsafe { self.vol.GetMute().map(|b| b.as_bool()).unwrap_or(false) }
     }
+    /// Sound is coming out of it right now.
+    pub fn playing(&self) -> bool {
+        self.meter.as_ref().is_some_and(|m| peak(m) > 0.003)
+    }
     pub fn set_mute(&self, m: bool) {
         unsafe { let _ = self.vol.SetMute(m, std::ptr::null()); }
     }

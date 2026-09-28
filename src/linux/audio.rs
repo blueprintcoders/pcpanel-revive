@@ -76,6 +76,7 @@ pub struct Session {
     index: u64,
     volume: f32,
     muted: bool,
+    corked: bool,
 }
 
 impl Session {
@@ -87,6 +88,10 @@ impl Session {
     }
     pub fn muted(&self) -> bool {
         self.muted
+    }
+    /// Sound is going out (a paused app "corks" its stream).
+    pub fn playing(&self) -> bool {
+        !self.corked
     }
     pub fn set_mute(&self, m: bool) {
         let _ = pactl(&["set-sink-input-mute", &self.index.to_string(), if m { "1" } else { "0" }]);
@@ -203,12 +208,36 @@ impl Audio {
                 index: s["index"].as_u64().unwrap_or(0),
                 volume: level(s),
                 muted: s["mute"].as_bool().unwrap_or(false),
+                corked: s["corked"].as_bool().unwrap_or(false),
             }
         }).collect()
     }
 
+    /// Start listening to what the default output plays (for the music visualizer), through its monitor.
     pub fn loopback(&self) -> R<Loopback> {
-        Err(Error("the music visualizer isn't on Linux yet".into()))
+        let device = self.default_name(false).ok_or_else(not_found)?;
+        const RATE: u32 = 48000;
+        let mut child = Command::new("parec")
+            .args(["-d", &format!("{device}.monitor"), "--format=float32le", "--channels=1", &format!("--rate={RATE}"), "--raw", "--latency-msec=30"])
+            .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null())
+            .spawn().map_err(|e| Error(format!("parec: {e} (install pulseaudio-utils)")))?;
+        let mut out = child.stdout.take().unwrap();
+        let buf = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let fill = buf.clone();
+        std::thread::spawn(move || {
+            use std::io::Read;
+            let mut bytes = [0u8; 4096];
+            while let Ok(n) = out.read(&mut bytes) {
+                if n == 0 {
+                    break;
+                }
+                let mut b = fill.lock().unwrap_or_else(|e| e.into_inner());
+                b.extend(bytes[..n - n % 4].chunks(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])));
+                let over = b.len().saturating_sub(RATE as usize); // keep at most a second if nobody reads
+                b.drain(..over);
+            }
+        });
+        Ok(Loopback { rate: RATE as f32, device, buf, child: std::sync::Mutex::new(child) })
     }
 }
 
@@ -224,15 +253,31 @@ fn not_found() -> Error {
     Error("audio device not found".into())
 }
 
-/// Not on Linux yet: `Audio::loopback` never makes one.
+/// What an output plays, as mono samples, read from `parec` on its own thread.
 pub struct Loopback {
     pub rate: f32,
+    /// The output's name, to notice when the default output changes.
     pub device: String,
+    buf: std::sync::Arc<std::sync::Mutex<Vec<f32>>>,
+    child: std::sync::Mutex<std::process::Child>,
 }
 
 impl Loopback {
-    pub fn read(&self, _out: &mut Vec<f32>) -> R<()> {
-        Err(not_found())
+    /// Append everything heard since the last call.
+    pub fn read(&self, out: &mut Vec<f32>) -> R<()> {
+        if self.child.lock().unwrap_or_else(|e| e.into_inner()).try_wait().ok().flatten().is_some() {
+            return Err(Error("parec stopped".into()));
+        }
+        out.append(&mut self.buf.lock().unwrap_or_else(|e| e.into_inner()));
+        Ok(())
+    }
+}
+
+impl Drop for Loopback {
+    fn drop(&mut self) {
+        let c = self.child.get_mut().unwrap_or_else(|e| e.into_inner());
+        let _ = c.kill();
+        let _ = c.wait();
     }
 }
 
