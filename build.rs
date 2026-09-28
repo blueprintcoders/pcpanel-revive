@@ -1,5 +1,6 @@
-//! Gives the exe its icon (Explorer, the taskbar, downloads). The icon is drawn by the same code the tray
-//! uses, written into a Windows resource file, and handed to the linker; no resource compiler needed.
+//! Gives the exe its icon (Explorer, the taskbar, downloads) and its version details (Properties > Details,
+//! which code signing checks). The icon is drawn by the same code the tray uses; both are written into a
+//! Windows resource file and handed to the linker, so no resource compiler is needed.
 use std::io::Write;
 
 #[allow(dead_code)]
@@ -49,9 +50,63 @@ fn resource(out: &mut Vec<u8>, kind: u16, id: u16, flags: u16, data: &[u8]) {
     }
 }
 
+fn utf16z(s: &str) -> Vec<u8> {
+    s.encode_utf16().chain([0]).flat_map(u16::to_le_bytes).collect()
+}
+
+fn pad4(b: &mut Vec<u8>) {
+    while b.len() % 4 != 0 {
+        b.push(0);
+    }
+}
+
+/// One node of a version resource: length, value length, type (1 = text), key, value, then children.
+fn version_node(key: &str, value: &[u8], text: bool, children: &[Vec<u8>]) -> Vec<u8> {
+    let mut b = vec![0, 0];
+    let value_len = if text { value.len() / 2 } else { value.len() };
+    b.extend((value_len as u16).to_le_bytes());
+    b.extend((text as u16).to_le_bytes());
+    b.extend(utf16z(key));
+    pad4(&mut b);
+    b.extend(value);
+    for child in children {
+        pad4(&mut b);
+        b.extend(child);
+    }
+    let len = b.len() as u16;
+    b[..2].copy_from_slice(&len.to_le_bytes());
+    b
+}
+
+/// The version resource: numbers from Cargo.toml, and the names shown in the exe's Properties.
+fn version_info() -> Vec<u8> {
+    let version = std::env::var("CARGO_PKG_VERSION").unwrap();
+    let part = |name: &str| std::env::var(name).unwrap().parse::<u32>().unwrap();
+    let (major, minor, patch) = (part("CARGO_PKG_VERSION_MAJOR"), part("CARGO_PKG_VERSION_MINOR"), part("CARGO_PKG_VERSION_PATCH"));
+    let mut fixed = Vec::new();
+    for v in [0xfeef04bd, 0x0001_0000, major << 16 | minor, patch << 16, major << 16 | minor, patch << 16, 0x3f, 0, 0x0004_0004, 1, 0, 0, 0u32] {
+        fixed.extend(v.to_le_bytes()); // signature, struct version, file and product version, flags, NT, app
+    }
+    let strings: Vec<Vec<u8>> = [
+        ("FileDescription", "PCPanel Revive"),
+        ("FileVersion", version.as_str()),
+        ("InternalName", "pcpanel-revive"),
+        ("LegalCopyright", "GPL-3.0-or-later"),
+        ("OriginalFilename", "pcpanel-revive.exe"),
+        ("ProductName", "PCPanel Revive"),
+        ("ProductVersion", version.as_str()),
+    ].iter().map(|(k, v)| version_node(k, &utf16z(v), true, &[])).collect();
+    let table = version_node("040904b0", &[], true, &strings); // English (US), Unicode
+    let string_info = version_node("StringFileInfo", &[], true, &[table]);
+    let translation = version_node("Translation", &0x04b0_0409u32.to_le_bytes(), false, &[]);
+    let var_info = version_node("VarFileInfo", &[], true, &[translation]);
+    version_node("VS_VERSION_INFO", &fixed, false, &[string_info, var_info])
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=src/icon.rs");
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=Cargo.toml"); // the version
     if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() != Ok("msvc") {
         return;
     }
@@ -75,6 +130,8 @@ fn main() {
     }
     // Explorer uses the first icon group in the exe.
     resource(&mut res, RT_GROUP_ICON, 1, 0x1030, &group);
+    const RT_VERSION: u16 = 16;
+    resource(&mut res, RT_VERSION, 1, 0x0030, &version_info());
     let path = std::path::Path::new(&std::env::var("OUT_DIR").unwrap()).join("icon.res");
     std::fs::File::create(&path).unwrap().write_all(&res).unwrap();
     println!("cargo:rustc-link-arg-bins={}", path.display());

@@ -192,6 +192,35 @@ The original wooden PCPanel has no lights, so lighting and alerts are hidden for
 
 ---
 
+## Uninstalling
+
+PCPanel Revive doesn't install anything, so removing it takes a minute:
+
+1. If you turned on **Start with Windows**, turn it off first (in *Settings > App* or the tray menu).
+2. Right-click the tray icon and choose **Quit**.
+3. Delete `pcpanel-revive.exe`.
+4. To remove your settings too, delete the `%APPDATA%\pcpanel-revive` folder (settings, backups, the log and the settings window's browser data).
+
+## Privacy
+
+PCPanel Revive has no accounts, analytics or telemetry, and your settings stay on your PC in `%APPDATA%\pcpanel-revive`.
+
+It connects to other computers only in these cases:
+
+- **Update checks:** once a day, and when you click *Check now*, it asks GitHub (`api.github.com`) whether a newer release exists, and downloads it from GitHub when you click *Update now*. No information about you or your setup is sent. Turn this off in *Settings > Updates*.
+- **Things you set up yourself:** web requests, smart light dimmers and Home Assistant actions go to the addresses you enter; OBS, Elgato Wave Link and Voicemeeter are reached on your own PC.
+
+The settings window talks to the tray app over `127.0.0.1` only, which other computers can't reach. For notification alerts it reads Windows' own notification and microphone-in-use records on your PC; they never leave it.
+
+## Code signing policy
+
+Free code signing provided by SignPath.io, certificate by SignPath Foundation. *(Applied for; releases will be signed once approved.)*
+
+- **Committers and reviewers:** [blueprintcoders](https://github.com/blueprintcoders)
+- **Approvers:** [blueprintcoders](https://github.com/blueprintcoders)
+
+Every release is built from this repository's source by GitHub Actions; signed releases are approved by an approver before signing. See [Privacy](#privacy) for what the program sends over the network.
+
 ## Building from source
 
 Requires [Rust](https://rustup.rs) (stable) on Windows.
