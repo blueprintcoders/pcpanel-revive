@@ -771,7 +771,12 @@ function deviceSvg() {
     const label = i === profileSlider() ? t.name : p.controls[i].label || t.name;
     const iw = icon || t.glyph ? 18 : 0, room = w - iw;
     let txt = label;
-    while (txt.length > 1 && textWidth(txt) > room) txt = txt.slice(0, -2) + '...';
+    if (textWidth(txt) > room) {
+      // Drop letters until it fits with the dots (keeping at least one).
+      let cut = label;
+      while (cut.length > 1 && textWidth(cut + '...') > room) cut = cut.slice(0, -1);
+      txt = cut + '...';
+    }
     const tw = textWidth(txt);
     const x0 = x - (iw + tw) / 2;
     const unset = i !== profileSlider() && ((p.controls[i].turn.type === 'none' && !p.controls[i].press.length) || present[i] === false);
