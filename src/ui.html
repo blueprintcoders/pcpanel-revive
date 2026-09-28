@@ -1208,6 +1208,7 @@ function settingsTab() {
       row('Debounce', num(cfg, 'button_debounce_ms', 5, 200, 5), h('span', {class: 'hint'}, 'ms - raise it if one press sometimes counts as two')),
       row('Deadband', num(cfg, 'deadband', 0, 20), h('span', {class: 'hint'}, 'ignore changes this small (0-255 scale) - fixes slider twitch')),
       row('', check(cfg, 'apply_on_connect', 'Set volumes to match the dials when the panel connects')),
+      row('', check(cfg, 'new_apps_at_dial', 'Apps start at their dial\'s level when they begin playing sound')),
       h('div', {class: 'hint indent'}, 'At startup, plug-in and wake from sleep. Off: volumes stay as they are until you move a dial.')),
     h('div', {class: 'panel'}, h('h2', {}, 'Volume popup'),
       row('', check(cfg, 'osd', 'Show a popup when a dial changes a volume, mutes, or switches profile')),

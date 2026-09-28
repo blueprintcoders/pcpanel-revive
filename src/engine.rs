@@ -102,6 +102,8 @@ struct Engine {
     playing_until: Option<Instant>,
     /// Locked, screens off, asleep: the lights go dark while any is true.
     idle: [bool; 3],
+    /// Apps with sound as of the last poll; None before the first.
+    known_pids: Option<HashSet<u32>>,
     /// When each control was last moved by hand, until its light goes back to the visualizer.
     moved_until: [Option<Instant>; CONTROLS],
 }
@@ -115,7 +117,7 @@ pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Bo
     let http = http_worker(shared.clone());
     let mut e = Engine {
         cfg, shared, post, audio, obs: Obs::default(), wavelink: WaveLink::default(), http, shift: None, pressing: Press::Single, slider_seg: None,
-        sheet_knob: None, sheet_until: None, viz: None, viz_frame: viz::Frame::default(), viz_buf: vec![], viz_retry: None, playing: false, playing_until: None, moved_until: [None; CONTROLS], idle: [false; 3],
+        sheet_knob: None, sheet_until: None, viz: None, viz_frame: viz::Frame::default(), viz_buf: vec![], viz_retry: None, playing: false, playing_until: None, moved_until: [None; CONTROLS], idle: [false; 3], known_pids: None,
         sent: [None; CONTROLS], pending: [None; CONTROLS], last_cmd: [None; CONTROLS], muted: [false; CONTROLS],
         press_deadline: [None; KNOBS], hold_deadline: [None; KNOBS], hold_fired: [false; KNOBS], debounce: [Debounce::default(); KNOBS],
         engaged: [false; CONTROLS], last_set: [None; CONTROLS], side: [None; CONTROLS], force_sync: [false; CONTROLS], step_anchor: [None; CONTROLS],
@@ -1354,6 +1356,7 @@ impl Engine {
     /// Returns true if the mute state changed.
     fn refresh_mutes(&mut self) -> bool {
         let sessions = self.audio.sessions();
+        self.new_apps_at_dial(&sessions);
         let (mut muted, mut levels, mut present) = ([false; CONTROLS], [None; CONTROLS], [true; CONTROLS]);
         for i in 0..CONTROLS {
             match &self.cfg.profile().controls[i].turn {
@@ -1409,6 +1412,27 @@ impl Engine {
         let changed = muted != self.muted;
         self.muted = muted;
         changed || relight_levels
+    }
+
+    /// Apps that started playing sound since the last poll take their dial's level
+    /// (not on the first poll, or everything already running would jump).
+    fn new_apps_at_dial(&mut self, sessions: &[Session]) {
+        let known = self.known_pids.replace(sessions.iter().map(|s| s.pid).collect());
+        let Some(known) = known.filter(|_| self.cfg.new_apps_at_dial) else { return };
+        let fresh: Vec<&Session> = sessions.iter().filter(|s| !known.contains(&s.pid)).collect();
+        if fresh.is_empty() {
+            return;
+        }
+        for (i, c) in self.cfg.profile().controls.iter().enumerate() {
+            let (Turn::App { apps }, Some(raw)) = (&c.turn, self.sent[i]) else { continue };
+            // "focused" follows whichever app is in front, so it has no level of its own to hand out.
+            let apps: Vec<String> = apps.iter().filter(|a| norm(a) != "focused").cloned().collect();
+            let m = self.matcher(&apps);
+            for s in fresh.iter().filter(|s| m(s)) {
+                s.set_volume(config::level(c, raw));
+                log(&self.shared, format!("{} started at {}'s level", s.exe, self.name(i)));
+            }
+        }
     }
 
     /// Periodic work: auto profile switching, mute LEDs, live levels, external config edits.

@@ -13,6 +13,8 @@ pub struct Config {
     pub deadband: u8,
     /// Apply physical positions to volumes when the device connects.
     pub apply_on_connect: bool,
+    /// An app that starts playing sound takes the level of the dial it's mapped to.
+    pub new_apps_at_dial: bool,
     /// Max ms between two presses to count as a double press.
     pub double_press_ms: u64,
     /// How long a knob press must be held to count as a hold.
@@ -406,7 +408,7 @@ impl Default for Config {
         let mut profiles = BTreeMap::new();
         profiles.insert("Default".into(), Profile { controls, ..Profile::default() });
         Config {
-            active: "Default".into(), deadband: 1, apply_on_connect: false, double_press_ms: 300, hold_ms: 500, button_debounce_ms: 50,
+            active: "Default".into(), deadband: 1, apply_on_connect: false, new_apps_at_dial: true, double_press_ms: 300, hold_ms: 500, button_debounce_ms: 50,
             osd: true, osd_position: "bottom".into(), pickup: true, obs: Obs::default(), profiles, alerts: vec![],
             profile_slider: ProfileSlider::default(), update_check: true, looks: vec![], lights_off_idle: true,
         }
