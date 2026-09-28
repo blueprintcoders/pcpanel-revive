@@ -98,6 +98,10 @@ fn handle(mut req: Request, tx: &Sender<Msg>, shared: &Arc<Mutex<Shared>>, audio
             std::thread::spawn(move || crate::install_update(&shared));
             req.respond(json_response(json!({"ok": true})))
         }
+        (Method::Post, "/api/report") => {
+            crate::report_problem(&shared);
+            req.respond(json_response(json!({"ok": true})))
+        }
         (Method::Post, "/api/open-log") if header(&req, "X-PCP").is_some() => {
             let _ = crate::sys::open(&crate::log_path().to_string_lossy());
             req.respond(json_response(json!({"ok": true})))

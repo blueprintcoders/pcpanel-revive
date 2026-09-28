@@ -1491,7 +1491,8 @@ async function selfTest() {
 }
 function logTab() {
   return [h('div', {class: 'row'}, h('button', {onclick: () => fetch('/api/open-log', {method: 'POST', headers: {'X-PCP': '1'}})}, 'Open log file'),
-      h('span', {class: 'hint'}, 'The full history, including crash details, is kept in pcpanel-revive.log next to your settings.')),
+      h('button', {onclick: () => fetch('/api/report', {method: 'POST'})}, 'Report a problem'),
+      h('span', {class: 'hint'}, 'The full history, including crash details, is kept in pcpanel-revive.log next to your settings. Report a problem opens a GitHub issue with the version and recent log filled in.')),
     h('div', {class: 'panel', id: 'log'}, h('h2', {}, 'Log'))];
 }
 

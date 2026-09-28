@@ -183,6 +183,43 @@ fn new_token() -> String {
     (0..4u64).map(|i| format!("{:016x}", std::collections::hash_map::RandomState::new().hash_one(i))).collect()
 }
 
+/// Open a new GitHub issue with the version, Windows, panel and recent log already filled in.
+pub fn report_problem(shared: &Mutex<Shared>) {
+    let _ = sys::open(&issue_url(shared));
+}
+
+fn issue_url(shared: &Mutex<Shared>) -> String {
+    let windows = windows_registry::LOCAL_MACHINE.open(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion").map(|k| {
+        let get = |n: &str| k.get_string(n).unwrap_or_default();
+        format!("{} {} (build {})", get("ProductName"), get("DisplayVersion"), get("CurrentBuild"))
+    }).unwrap_or_default();
+    let (panel, log) = {
+        let s = lock(shared);
+        let panel = if s.connected { s.model.name() } else { "not connected" };
+        // The newest lines, with the Windows user name taken out of any paths.
+        let home = std::env::var("USERPROFILE").unwrap_or_default();
+        let log: Vec<String> = s.log.iter().rev().take(15).rev()
+            .map(|l| if home.is_empty() { l.clone() } else { l.replace(&home, "%USERPROFILE%") })
+            .collect();
+        (panel, log.join("\n"))
+    };
+    let body = format!(
+        "**What happened?**\n\n\n**What did you do just before?**\n\n\n**What did you expect?**\n\n\n\
+         ---\nPCPanel Revive {}\n{windows}\nPanel: {panel}\n\n\
+         Recent log (check nothing private is in it):\n```\n{log}\n```\n",
+        env!("CARGO_PKG_VERSION")
+    );
+    let repo = update::REPO.unwrap_or("blueprintcoders/pcpanel-revive");
+    format!("https://github.com/{repo}/issues/new?body={}", url_encode(&body))
+}
+
+fn url_encode(s: &str) -> String {
+    s.bytes().map(|b| match b {
+        b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
+        _ => format!("%{b:02X}"),
+    }).collect()
+}
+
 pub fn open_settings(devtools: bool) {
     if let Ok(exe) = std::env::current_exe() {
         let mut cmd = std::process::Command::new(exe);
@@ -214,6 +251,7 @@ fn build_menu(shared: &Mutex<Shared>) -> Menu {
     let _ = menu.append(&profiles);
     let _ = menu.append(&MenuItem::with_id("reload", "Reload config", true, None));
     let _ = menu.append(&CheckMenuItem::with_id("autostart", "Start with Windows", true, sys::autostart_enabled(), None));
+    let _ = menu.append(&MenuItem::with_id("report", "Report a problem", true, None));
     let _ = menu.append(&PredefinedMenuItem::separator());
     let _ = menu.append(&MenuItem::with_id("quit", "Quit", true, None));
     menu
@@ -329,6 +367,7 @@ fn main() {
             "reload" => { let _ = tx.send(Msg::Reload); }
             "autostart" => { sys::set_autostart(!sys::autostart_enabled()); post(WM_REFRESH); }
             "quit" => post(WM_QUIT_APP),
+            "report" => report_problem(&menu_shared),
             "update" => {
                 let shared = menu_shared.clone();
                 std::thread::spawn(move || install_update(&shared));
@@ -384,6 +423,19 @@ mod tests {
     #[ignore]
     fn dump_icon() {
         std::fs::write(std::env::var("ICON_OUT").unwrap(), super::icon_rgba()).unwrap();
+    }
+
+    #[test]
+    fn issue_link_is_encoded_and_hides_the_user_name() {
+        let shared = std::sync::Mutex::new(super::Shared::default());
+        let home = std::env::var("USERPROFILE").unwrap();
+        super::lock(&shared).log.push_back(format!("config error: {home}\\config.json & more"));
+        let url = super::issue_url(&shared);
+        assert!(url.starts_with("https://github.com/") && url.contains("/issues/new?body="));
+        let body = url.split("body=").nth(1).unwrap();
+        assert!(!body.contains(['&', ' ', '\n', '#']));
+        assert!(body.contains("%25USERPROFILE%25%5Cconfig.json%20%26%20more"));
+        assert!(!body.contains(&super::url_encode(&home)));
     }
 
     #[test]
