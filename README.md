@@ -29,6 +29,8 @@ It lives in your tray as a single ~2 MB exe using about 14 MB of RAM, with no me
 4. **Left-click the tray icon** to open the settings. Right-click it for profiles, *Start with Windows* and *Quit*.
 5. **New to PCPanel?** Click **Quick setup** in the banner (or *Settings > Quick setup*) for a ready-made layout: speakers, mic, the app in front, chat, music, browser and more, based on the apps on your PC. It's added as a new profile.
 
+   ![Quick setup: a ready-made layout for the apps on your PC](docs/screenshots/quick-setup.webp)
+
 > **"Windows protected your PC"?** The exe isn't code-signed yet, so SmartScreen may warn you the first time. Click **More info > Run anyway**.
 
 ### Bring over your old setup
@@ -100,6 +102,9 @@ Type or paste exe names (`spotify`, `discord.exe`; commas work), or click **Pick
 
 - **Presets:** 12 ready-made looks. Click one to apply it to the current profile; Undo goes back. **Save this profile's lighting as a preset** keeps your own look (every light, the logo, brightness and the visualizer) to apply to any profile; your presets can be renamed and deleted.
 - **Music visualizer:** on top of your normal lighting, turn it on *while audio is playing* (optionally only for chosen apps, like Spotify) or *all the time*. While it runs, everything dances to what your speakers play: on the Pro, the sliders show bass, low mids, high mids and treble, the knobs pulse with the same bands and flash on the beat, and the logo follows the overall level. When the music stops, your lighting comes back. Under *Lights* you can limit it to some lights, e.g. just the sliders, and the rest keep their usual look. Move a knob or slider while it runs and that light shows the control's position for a moment, then goes back to the music. Styles: rainbow bands, two colors of your own (quiet to loud), or one color with everything pulsing together to the beat. One-click visualizer presets (Party, Neon Club, Bonfire, Synthwave, Toxic, Heartbeat, Deep Sea, Strobe) change only the visualizer, not your lighting. It only listens to the speakers' output, and nothing is recorded.
+
+  ![The music visualizer settings](docs/screenshots/visualizer.webp)
+
 - **Per control:** static, gradient, fill with position, **meter** (pulses with the control's audio), or **real volume**.
 - **When muted:** turn a control's LED a color of your choice (e.g. red) while its app or device is muted.
 - **Whole panel:** single color, rainbow, wave or breath, plus the logo and slider labels on the Pro.
@@ -134,6 +139,9 @@ If an app's volume was changed somewhere else (like the Windows mixer), turning 
 - **Shift layer:** add *Shift: use another profile while held* under a knob's **Hold**. While you hold that knob, every other control does what it does in the other profile; let go and it's back. Under a press instead, it stays until you press that knob again.
 - **Profile slider** (Pro): *Settings > Profile slider* turns one slider into a profile switch. Its light fills up to where it is: the first profile you list is at the bottom, up to one segment lit, the next is two lit, and so on, and the last one keeps the rest of the way up. Up to five profiles, one per segment, and you can tell which one is on at a glance: give each profile its own fill color, or blend from a bottom color to a top color so every segment has its own shade.
 - **Cheat sheet:** add *Show a cheat sheet of every control* to a button. Under Hold, a map of your panel appears on screen while you hold it: a card for each knob and slider, laid out as on the device and marked in its light color, with what turning, pressing, double pressing and holding it does. After a Shift action, it shows the other profile.
+
+  ![The cheat sheet: a card for each knob and slider, laid out as on the panel](docs/screenshots/cheat-sheet.webp)
+
 
 ### Settings, self-test and backups
 

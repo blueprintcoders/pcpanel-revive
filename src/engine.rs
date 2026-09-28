@@ -351,6 +351,7 @@ fn app_name(exe: &str) -> String {
         "focused" => "App in front".into(),
         "system" => "System sounds".into(),
         "unmapped" => "Everything else".into(),
+        "msedge.exe" => "Edge".into(),
         e => {
             let stem = e.trim_end_matches(".exe");
             stem.chars().next().map_or(String::new(), |c| c.to_uppercase().collect::<String>() + &stem[c.len_utf8()..])
@@ -458,6 +459,8 @@ fn sheet_rows(cfg: &Config, n: usize) -> Vec<osd::SheetItem> {
         let (title, mut lines) = match (label, what.is_empty()) {
             ("", _) => (what, vec![]),
             (l, true) => (l.to_string(), vec![]),
+            // The label already says it ("Scroll" / "Scroll"): no need to repeat it.
+            (l, false) if l.eq_ignore_ascii_case(&what) => (l.to_string(), vec![]),
             (l, false) => (l.to_string(), vec![what]),
         };
         lines.extend([("Press", &c.press), ("Double", &c.double), ("Hold", &c.hold)].into_iter()
@@ -1463,7 +1466,7 @@ mod tests {
         let active = cfg.active.clone();
         cfg.profiles.get_mut(&active).unwrap().controls[5].label = "Browsers".into();
         let s1 = &sheet_rows(&cfg, 9)[5];
-        assert_eq!((s1.title.as_str(), s1.lines[0].as_str()), ("Browsers", "Chrome, Firefox, Msedge volume"));
+        assert_eq!((s1.title.as_str(), s1.lines[0].as_str()), ("Browsers", "Chrome, Firefox, Edge volume"));
         assert_eq!(sheet_rows(&cfg, 4).len(), 4, "Mini: four knobs");
         assert_eq!(action_text(&Action::Run { cmd: r#""C:\Tools\obs64.exe""#.into() }), "Run obs64.exe");
     }
