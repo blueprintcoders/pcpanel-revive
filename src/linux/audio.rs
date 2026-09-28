@@ -51,11 +51,56 @@ fn raw(v: f32) -> String {
     ((v.clamp(0.0, 1.0) * 65536.0).round() as u32).to_string()
 }
 
-/// A live peak meter. Not on Linux yet: nothing reads one.
+/// A live peak meter: `parec` arguments that record what's being measured (an app's stream, an
+/// output's monitor or an input). The recording starts the first time it's read.
 #[derive(Clone)]
-pub struct Meter;
+pub struct Meter(Vec<String>);
 
-pub fn peak(_: &Meter) -> f32 {
+struct Running {
+    peak: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    used: std::time::Instant,
+    child: std::process::Child,
+}
+
+/// Recordings stop a few seconds after nothing reads them (the light changed, the app went away).
+const METER_IDLE: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// The loudest sample (0-1) in the last few milliseconds of what the meter measures.
+pub fn peak(m: &Meter) -> f32 {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static RUNNING: std::sync::Mutex<Vec<(Vec<String>, Running)>> = std::sync::Mutex::new(Vec::new());
+    let mut all = RUNNING.lock().unwrap_or_else(|e| e.into_inner());
+    all.retain_mut(|(_, r)| {
+        let keep = r.used.elapsed() < METER_IDLE && r.child.try_wait().ok().flatten().is_none();
+        if !keep {
+            let _ = r.child.kill();
+            let _ = r.child.wait();
+        }
+        keep
+    });
+    if let Some((_, r)) = all.iter_mut().find(|(k, _)| *k == m.0) {
+        r.used = std::time::Instant::now();
+        return f32::from_bits(r.peak.load(Ordering::Relaxed));
+    }
+    let Ok(mut child) = Command::new("parec").args(&m.0)
+        .args(["--format=float32le", "--channels=1", "--rate=8000", "--raw", "--latency-msec=20"])
+        .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null())
+        .spawn() else { return 0.0 };
+    let mut out = child.stdout.take().unwrap();
+    let peak = std::sync::Arc::new(AtomicU32::new(0));
+    let level = peak.clone();
+    std::thread::spawn(move || {
+        use std::io::Read;
+        let mut bytes = [0u8; 640]; // 20 ms
+        while let Ok(n) = out.read(&mut bytes) {
+            if n == 0 {
+                break;
+            }
+            let p = bytes[..n - n % 4].chunks(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]).abs()).fold(0.0f32, f32::max);
+            level.store(p.min(1.0).to_bits(), Ordering::Relaxed);
+        }
+    });
+    all.push((m.0.clone(), Running { peak, used: std::time::Instant::now(), child }));
     0.0
 }
 
@@ -159,8 +204,10 @@ impl Audio {
         pactl(&[&format!("set-{}-volume", Self::kind(&d)), &d.id, &raw(v)]).map(drop)
     }
 
-    pub fn device_meter(&self, _spec: &str) -> Option<Meter> {
-        None
+    pub fn device_meter(&self, spec: &str) -> Option<Meter> {
+        let d = self.find(spec)?;
+        let source = if d.capture { d.id } else { format!("{}.monitor", d.id) };
+        Some(Meter(vec!["-d".into(), source]))
     }
 
     pub fn device_volume(&self, spec: &str) -> Option<f32> {
@@ -204,7 +251,7 @@ impl Audio {
             Session {
                 exe,
                 pid,
-                meter: None,
+                meter: Some(Meter(vec![format!("--monitor-stream={}", s["index"].as_u64().unwrap_or(0))])),
                 index: s["index"].as_u64().unwrap_or(0),
                 volume: level(s),
                 muted: s["mute"].as_bool().unwrap_or(false),
@@ -353,6 +400,12 @@ mod tests {
             println!("app {} pid={} volume={:.2} muted={}", s.exe, s.pid, s.volume, s.muted);
         }
         let first = s.first().expect("play something first");
+        let (m, out) = (first.meter.clone().unwrap(), a.device_meter("default").unwrap());
+        peak(&m);
+        peak(&out);
+        std::thread::sleep(std::time::Duration::from_millis(600));
+        println!("peaks: app {:.3} output {:.3}", peak(&m), peak(&out));
+        assert!(peak(&m) > 0.01 && peak(&out) > 0.01);
         first.set_volume(0.3);
         first.set_mute(true);
         let again = a.sessions().into_iter().find(|x| x.index == first.index).unwrap();
