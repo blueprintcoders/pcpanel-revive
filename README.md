@@ -2,7 +2,7 @@
 
 A free, open-source, lightweight replacement for the official PCPanel software on Windows 10/11. It works with the **PCPanel Pro**, the **PCPanel Mini** and the original wooden PCPanel.
 
-It lives in your tray as a single ~2 MB exe using about 14 MB of RAM, with no measurable CPU when idle. It has no Java, no services and no installer.
+It lives in your tray as a single exe under 3 MB using about 14 MB of RAM, with no measurable CPU when idle. It has no Java, no services and no installer.
 
 ![The settings window: a live picture of your panel on the left, the selected control's settings on the right](docs/screenshots/controls.webp)
 
