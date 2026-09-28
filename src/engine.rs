@@ -4,7 +4,7 @@ use crate::config::{self, Action, Alert, Config, Light, Logo, Profile, Turn, CON
 use windows::Win32::Media::Audio::Endpoints::IAudioMeterInformation;
 use crate::hid::{self, Event};
 use crate::osd::{self, Info};
-use crate::{log, obs::Obs, sys, viz, Msg, Shared, WM_OSD, WM_REFRESH};
+use crate::{log, obs::Obs, sys, viz, wavelink::WaveLink, Msg, Shared, WM_OSD, WM_REFRESH};
 use serde_json::json;
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
@@ -34,6 +34,7 @@ struct Engine {
     post: Box<dyn Fn(u32)>,
     audio: Audio,
     obs: Obs,
+    wavelink: WaveLink,
     sent: [Option<u8>; CONTROLS],
     pending: [Option<u8>; CONTROLS],
     last_cmd: [Option<Instant>; CONTROLS],
@@ -111,7 +112,7 @@ pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Bo
     };
     let http = http_worker(shared.clone());
     let mut e = Engine {
-        cfg, shared, post, audio, obs: Obs::default(), http, shift: None, pressing: Press::Single, slider_seg: None,
+        cfg, shared, post, audio, obs: Obs::default(), wavelink: WaveLink::default(), http, shift: None, pressing: Press::Single, slider_seg: None,
         sheet_knob: None, sheet_until: None, viz: None, viz_frame: viz::Frame::default(), viz_buf: vec![], viz_retry: None, playing: false, playing_until: None, moved_until: [None; CONTROLS],
         sent: [None; CONTROLS], pending: [None; CONTROLS], last_cmd: [None; CONTROLS], muted: [false; CONTROLS],
         press_deadline: [None; KNOBS], hold_deadline: [None; KNOBS], hold_fired: [false; KNOBS], debounce: [Debounce::default(); KNOBS],
@@ -386,6 +387,7 @@ fn turn_text(t: &Turn) -> String {
         Turn::Keys { up, .. } if up.contains("scroll") => if up.contains("ctrl") { "Zoom" } else { "Scroll" }.into(),
         Turn::Keys { up, down, .. } => format!("Keys {down} / {up}"),
         Turn::Http { .. } => "Smart light".into(),
+        Turn::WaveLink { name, .. } => format!("Wave Link: {name}"),
     }
 }
 
@@ -434,6 +436,7 @@ fn action_text(a: &Action) -> String {
         Action::AppOutput { apps, device } => format!("{} to {}", apps_name(apps), device_name(device)),
         Action::Shift { profile } => format!("Shift to {profile}"),
         Action::CheatSheet => "This cheat sheet".into(),
+        Action::WaveLinkMute { name, .. } => format!("Mute {name}"),
     }
 }
 
@@ -1024,6 +1027,10 @@ impl Engine {
                 self.osd(Info { title: label.unwrap_or(param), icon: osd::Icon::Speaker, level: Some(v), ..Default::default() });
             }
             Turn::Command { cmd } => sys::run(&cmd.replace("{value}", &format!("{}", (v * 100.0).round() as i32)))?,
+            Turn::WaveLink { channel, mix, name } => {
+                self.wavelink.set_level(&channel, &mix, v)?;
+                self.osd(Info { title: label.unwrap_or(name), icon: osd::Icon::Speaker, level: Some(v), ..Default::default() });
+            }
             Turn::Http { method, url, headers, body } => {
                 let _ = self.http.send((i, [method, fill_level(&url, v), headers, fill_level(&body, v)]));
                 self.osd(Info { title: label.unwrap_or("Lights".into()), icon: osd::Icon::Light, level: Some(v), ..Default::default() });
@@ -1253,6 +1260,10 @@ impl Engine {
                     self.shift = Some((i, self.cfg.active.clone(), self.pressing == Press::Hold));
                     self.activate(&profile, false);
                 }
+            }
+            Action::WaveLinkMute { channel, mix, name } => {
+                let muted = self.wavelink.toggle_mute(&channel, &mix)?;
+                self.osd(Info { title: name, icon: osd::Icon::Speaker, muted, hint: if muted { "Muted" } else { "Unmuted" }.into(), ..Default::default() });
             }
             Action::CheatSheet => {
                 let held = self.pressing == Press::Hold;

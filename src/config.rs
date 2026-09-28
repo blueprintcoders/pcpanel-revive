@@ -214,6 +214,13 @@ pub enum Turn {
         #[serde(default)] headers: String,
         #[serde(default)] body: String,
     },
+    /// Elgato Wave Link 3: a channel's fader (no mix), a channel's level in one mix, or a mix's master
+    /// (no channel). Ids come from Wave Link; `name` is only for showing.
+    WaveLink {
+        #[serde(default)] channel: String,
+        #[serde(default)] mix: String,
+        #[serde(default)] name: String,
+    },
 }
 fn db_min() -> f32 { -60.0 }
 fn steps() -> u8 { 24 }
@@ -270,6 +277,12 @@ pub enum Action {
     Shift { #[serde(default)] profile: String },
     /// Show what every control does: while held (from Hold), or for a few seconds (from a press).
     CheatSheet,
+    /// Toggle mute on a Wave Link channel, a channel in one mix, or a mix (same targets as the turn).
+    WaveLinkMute {
+        #[serde(default)] channel: String,
+        #[serde(default)] mix: String,
+        #[serde(default)] name: String,
+    },
 }
 fn half() -> u8 { 50 }
 fn post() -> String { "POST".into() }

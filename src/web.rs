@@ -107,6 +107,10 @@ fn handle(mut req: Request, tx: &Sender<Msg>, shared: &Arc<Mutex<Shared>>, audio
             let list: Vec<String> = crate::notif::sources().unwrap_or_default().into_iter().map(|s| s.handler).collect();
             req.respond(json_response(json!(list)))
         }
+        (Method::Get, "/api/wavelink") => match crate::wavelink::WaveLink::default().targets() {
+            Ok(t) => req.respond(json_response(t)),
+            Err(e) => req.respond(json_response(json!({"error": e}))),
+        },
         (Method::Get, "/api/displays") => {
             let list: Vec<_> = crate::sys::displays().into_iter().map(|(id, name)| json!({"id": id, "name": name})).collect();
             req.respond(json_response(json!(list)))

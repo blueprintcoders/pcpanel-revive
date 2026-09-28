@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Elgato Wave Link 3 (experimental):** knobs and sliders can control a Wave Link channel, a channel in one mix, or a whole mix, and buttons can toggle their mute. It's built from the protocol other open-source apps use and hasn't been tried with Wave Link itself yet, so please report how it works. Wave Link 2 isn't supported.
+
 ## v0.1.0
 
 The first release of PCPanel Revive: a free, open-source replacement for the official PCPanel software on Windows 10/11, for the PCPanel Pro, the PCPanel Mini and the original wooden PCPanel. One small exe in the tray; no Java, no services, no installer.

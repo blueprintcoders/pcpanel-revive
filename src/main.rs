@@ -14,6 +14,7 @@ mod osd;
 mod sys;
 mod update;
 mod viz;
+mod wavelink;
 mod web;
 
 use config::{Config, CONTROLS, KNOBS};

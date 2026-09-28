@@ -56,6 +56,7 @@ Each control has:
   - device volume (speakers, mic, or a specific device)
   - OBS source volume
   - a Voicemeeter parameter
+  - an **Elgato Wave Link 3** channel, a channel in one mix (e.g. only your Stream mix), or a whole mix (experimental: new and not yet tested with Wave Link itself, so reports are welcome)
   - a command
   - the panel's LED brightness
   - **keystrokes as you turn:** one key or scroll step per step turned. Scroll a page, zoom (Ctrl + wheel), change brush size in Photoshop with `]` / `[`, or step through a video timeline.
@@ -91,6 +92,7 @@ Type or paste exe names (`spotify`, `discord.exe`; commas work), or click **Pick
 | Keyboard & apps | Keystroke or media key (or **record** a shortcut) · Run a program · Focus or open an app · Open a website, file or folder · Type text · Kill a process |
 | Profiles | Switch to a profile · Next profile · Shift: use another profile while the knob is held |
 | OBS | Switch scene · Toggle a source's mute · Toggle recording / streaming |
+| Elgato Wave Link | Toggle mute on a channel, a channel in one mix, or a mix (experimental) |
 | Web & smart home | Web request (Home Assistant, webhooks) with method, URL, headers and body |
 | System | Lock PC · Turn displays off/on (all, or chosen monitors) |
 | Voicemeeter | Run a Voicemeeter script |
