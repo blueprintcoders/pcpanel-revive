@@ -1181,6 +1181,7 @@ function settingsTab() {
   return [h('div', {class: 'panel'}, h('h2', {}, 'Panel'),
       row('', h('button', {class: 'pri', onclick: selfTest}, 'Test my panel'),
         h('span', {class: 'hint'}, 'Checks every light, knob, slider and button. Takes about a minute.')),
+      row('', check(cfg, 'lights_off_idle', 'Turn the lights off while the PC is locked, the screens are off or it\'s asleep')),
       row('', h('button', {onclick: quickSetup}, 'Quick setup'),
         h('span', {class: 'hint'}, 'A ready-made layout for the apps on this PC, added as a new profile.'))),
     isPro() ? profileSliderPanel() : null,

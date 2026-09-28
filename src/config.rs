@@ -33,6 +33,8 @@ pub struct Config {
     pub profile_slider: ProfileSlider,
     /// Look for a new version on GitHub once a day.
     pub update_check: bool,
+    /// Turn the panel's lights off while the PC is locked, its screens are off or it's asleep.
+    pub lights_off_idle: bool,
     /// Lighting presets saved from a profile; shared by every profile.
     pub looks: Vec<Look>,
 }
@@ -406,7 +408,7 @@ impl Default for Config {
         Config {
             active: "Default".into(), deadband: 1, apply_on_connect: false, double_press_ms: 300, hold_ms: 500, button_debounce_ms: 50,
             osd: true, osd_position: "bottom".into(), pickup: true, obs: Obs::default(), profiles, alerts: vec![],
-            profile_slider: ProfileSlider::default(), update_check: true, looks: vec![],
+            profile_slider: ProfileSlider::default(), update_check: true, looks: vec![], lights_off_idle: true,
         }
     }
 }

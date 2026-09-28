@@ -1,6 +1,6 @@
-//! Tells the engine when any app's taskbar button starts flashing (how chat apps signal a new message).
-//! A hidden window on the tray thread receives Explorer's shell hook messages.
-use crate::Msg;
+//! A hidden window on the tray thread that tells the engine when any app's taskbar button starts flashing
+//! (how chat apps signal a new message), and when the PC locks, its screens turn off or it goes to sleep.
+use crate::{Idle, Msg};
 use std::cell::{Cell, RefCell};
 use std::sync::mpsc::Sender;
 use windows::core::w;
@@ -34,10 +34,42 @@ pub fn init(tx: Sender<Msg>) {
         HOOK_MSG.set(RegisterWindowMessageW(w!("SHELLHOOK")));
         TX.with(|t| *t.borrow_mut() = Some(tx));
         let _ = RegisterShellHookWindow(hwnd);
+        // Lock/unlock, screens off/on (reported right away, then on every change), sleep/wake.
+        let _ = windows::Win32::System::RemoteDesktop::WTSRegisterSessionNotification(hwnd, 0); // this session
+        let _ = windows::Win32::System::Power::RegisterPowerSettingNotification(HANDLE(hwnd.0), &CONSOLE_DISPLAY_STATE, DEVICE_NOTIFY_WINDOW_HANDLE);
     }
 }
 
+/// GUID_CONSOLE_DISPLAY_STATE: whether the screens are on.
+const CONSOLE_DISPLAY_STATE: windows::core::GUID = windows::core::GUID::from_u128(0x6fe69556_704a_47a0_8f24_c28d936fda47);
+
+fn send(m: Msg) {
+    TX.with(|t| if let Some(tx) = t.borrow().as_ref() { let _ = tx.send(m); });
+}
+
 unsafe extern "system" fn proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    if msg == WM_WTSSESSION_CHANGE {
+        match wp.0 as u32 {
+            WTS_SESSION_LOCK => send(Msg::Idle(Idle::Locked, true)),
+            WTS_SESSION_UNLOCK => send(Msg::Idle(Idle::Locked, false)),
+            _ => {}
+        }
+        return LRESULT(0);
+    }
+    if msg == WM_POWERBROADCAST {
+        match wp.0 as u32 {
+            PBT_APMSUSPEND => send(Msg::Idle(Idle::Asleep, true)),
+            PBT_APMRESUMEAUTOMATIC => send(Msg::Idle(Idle::Asleep, false)),
+            PBT_POWERSETTINGCHANGE => {
+                let setting = &*(lp.0 as *const windows::Win32::System::Power::POWERBROADCAST_SETTING);
+                if setting.PowerSetting == CONSOLE_DISPLAY_STATE {
+                    send(Msg::Idle(Idle::ScreensOff, setting.Data[0] == 0)); // 0 off, 1 on, 2 dimmed
+                }
+            }
+            _ => {}
+        }
+        return LRESULT(1);
+    }
     if msg == WM_OPEN_SETTINGS {
         crate::open_settings(wp.0 != 0);
         return LRESULT(0);
@@ -47,7 +79,7 @@ unsafe extern "system" fn proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> 
         GetWindowThreadProcessId(HWND(lp.0 as _), Some(&mut pid));
         let exe = crate::audio::process_name(pid);
         if !exe.is_empty() {
-            TX.with(|t| if let Some(tx) = t.borrow().as_ref() { let _ = tx.send(Msg::Flash(exe)); });
+            send(Msg::Flash(exe));
         }
         return LRESULT(0);
     }

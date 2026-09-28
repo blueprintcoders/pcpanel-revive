@@ -47,6 +47,15 @@ pub enum Msg {
     TestMode(bool),
     /// Panel self-test: light only this LED (0-8 controls, 9 logo), or back to normal.
     TestLight(Option<usize>),
+    /// The PC locked, its screens turned off or it went to sleep (true), or came back (false).
+    Idle(Idle, bool),
+}
+
+#[derive(Clone, Copy)]
+pub enum Idle {
+    Locked,
+    ScreensOff,
+    Asleep,
 }
 
 #[derive(Default)]

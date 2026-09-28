@@ -100,6 +100,8 @@ struct Engine {
     /// "While audio is playing": audio was heard recently enough to keep the visualizer on.
     playing: bool,
     playing_until: Option<Instant>,
+    /// Locked, screens off, asleep: the lights go dark while any is true.
+    idle: [bool; 3],
     /// When each control was last moved by hand, until its light goes back to the visualizer.
     moved_until: [Option<Instant>; CONTROLS],
 }
@@ -113,7 +115,7 @@ pub fn run(rx: &Receiver<Msg>, cfg: Config, shared: Arc<Mutex<Shared>>, post: Bo
     let http = http_worker(shared.clone());
     let mut e = Engine {
         cfg, shared, post, audio, obs: Obs::default(), wavelink: WaveLink::default(), http, shift: None, pressing: Press::Single, slider_seg: None,
-        sheet_knob: None, sheet_until: None, viz: None, viz_frame: viz::Frame::default(), viz_buf: vec![], viz_retry: None, playing: false, playing_until: None, moved_until: [None; CONTROLS],
+        sheet_knob: None, sheet_until: None, viz: None, viz_frame: viz::Frame::default(), viz_buf: vec![], viz_retry: None, playing: false, playing_until: None, moved_until: [None; CONTROLS], idle: [false; 3],
         sent: [None; CONTROLS], pending: [None; CONTROLS], last_cmd: [None; CONTROLS], muted: [false; CONTROLS],
         press_deadline: [None; KNOBS], hold_deadline: [None; KNOBS], hold_fired: [false; KNOBS], debounce: [Debounce::default(); KNOBS],
         engaged: [false; CONTROLS], last_set: [None; CONTROLS], side: [None; CONTROLS], force_sync: [false; CONTROLS], step_anchor: [None; CONTROLS],
@@ -622,6 +624,14 @@ impl Engine {
                 }
                 log(&self.shared, format!("panel self-test {}", if on { "started" } else { "finished" }));
             }
+            Msg::Idle(what, on) => {
+                let was = self.dark();
+                self.idle[what as usize] = on;
+                if self.dark() != was {
+                    log(&self.shared, if was { "lights back on".into() } else { "lights off while the PC is idle".into() });
+                    self.relight();
+                }
+            }
             Msg::TestLight(i) => {
                 self.light_test = i;
                 self.relight();
@@ -701,7 +711,15 @@ impl Engine {
         self.publish();
     }
 
+    /// Lights off: the PC is locked, its screens are off or it's asleep (unless that's turned off).
+    fn dark(&self) -> bool {
+        self.cfg.lights_off_idle && self.idle.iter().any(|&i| i)
+    }
+
     fn animating(&self) -> bool {
+        if self.dark() {
+            return false; // nothing to animate while the lights are off
+        }
         self.alerts_on.iter().any(|&on| on) || (self.connected && !self.meters.is_empty() && self.light_test.is_none()) || self.viz_on()
     }
 
@@ -925,6 +943,10 @@ impl Engine {
             let live = self.live_frame(self.cfg.profile());
             if self.alerts_on.iter().any(|&on| on) { self.alert_frame(&live) } else { live }
         };
+        let mut frame = frame;
+        if self.dark() {
+            frame.lighting.brightness = 0;
+        }
         let reports = hid::lighting(model, &frame, &self.muted);
         let mut s = crate::lock(&self.shared);
         s.lights = reports;
