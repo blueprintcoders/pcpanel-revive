@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.2
+
+- **Smoother updates:** after updating, the settings window reopens by itself on the new version (keeping any unsaved change), and the old exe is cleaned up automatically. Before, an open settings window could stay stuck on "Downloading".
+
 ## v0.1.1
 
 - **Elgato Wave Link 3 (experimental):** knobs and sliders can control a Wave Link channel, a channel in one mix, or a whole mix, and buttons can toggle their mute. It's built from the protocol other open-source apps use and hasn't been tried with Wave Link itself yet, so please report how it works. Wave Link 2 isn't supported.
