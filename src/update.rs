@@ -74,10 +74,18 @@ pub fn install(r: &Release) -> Result<(), String> {
 }
 
 /// Remove what the last update left behind.
+/// Right after an update the old version may still be exiting, so keep trying for a little while.
 pub fn cleanup() {
-    if let Ok(exe) = std::env::current_exe() {
-        let _ = std::fs::remove_file(exe.with_extension("exe.old"));
-    }
+    let Ok(exe) = std::env::current_exe() else { return };
+    let old = exe.with_extension("exe.old");
+    std::thread::spawn(move || {
+        for _ in 0..40 {
+            if !old.exists() || std::fs::remove_file(&old).is_ok() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+    });
 }
 
 #[cfg(test)]

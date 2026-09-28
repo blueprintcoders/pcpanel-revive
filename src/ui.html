@@ -1623,7 +1623,8 @@ window.autosave = autosave;
 
 async function poll() {
   try {
-    const s = await (await fetch('/api/state')).json();
+    // Never wait forever: a request cut off by the app restarting (e.g. an update) would stop polling for good.
+    const s = await (await fetch('/api/state', {signal: AbortSignal.timeout(3000)})).json();
     $('#dot').className = 'dot' + (s.connected ? ' on' : '');
     $('#conn').textContent = previewModel ? `Previewing the ${{pro: 'PCPanel Pro', mini: 'PCPanel Mini', original: 'original wooden PCPanel'}[previewModel] || previewModel} layout - nothing is saved` : s.connected ? `${s.model_name} connected` : 'PCPanel not found';
     if (!previewModel && s.connected && s.model && s.model !== model) { model = s.model; if (!isPro() && sel >= 4) sel = 0; if (cfg && !dirty) render(); }

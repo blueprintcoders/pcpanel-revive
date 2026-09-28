@@ -13,6 +13,24 @@ use wry::{WebContext, WebViewBuilder, WebViewBuilderExtWindows};
 
 pub const TITLE: &str = "PCPanel Revive Settings";
 
+/// Close the settings window if it's open, and wait (up to 3 s) until it has saved and gone.
+/// Returns whether it was open.
+pub fn close_window() -> bool {
+    use windows::Win32::Foundation::{LPARAM, WPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, PostMessageW, WM_CLOSE};
+    let title: Vec<u16> = TITLE.encode_utf16().chain([0]).collect();
+    let find = || unsafe { FindWindowW(None, windows::core::PCWSTR(title.as_ptr())) }.ok().filter(|h| !h.is_invalid());
+    let Some(hwnd) = find() else { return false };
+    unsafe { let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0)); }
+    for _ in 0..30 {
+        if find().is_none() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    true
+}
+
 enum UserEvent { Focus, Dirty(bool), Exit }
 
 fn tray_running() -> bool {

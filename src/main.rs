@@ -247,6 +247,11 @@ fn main() {
 
     hid::spawn(tx.clone(), shared.clone());
     web::spawn(tx.clone(), shared.clone());
+    // An open settings window still belongs to the old version: swap it for one of this version.
+    // It saves any pending change as it closes, which this version's server now receives.
+    if updated && settings::close_window() {
+        open_settings();
+    }
     {
         // The engine restarts itself after a crash, reloading the config from disk.
         let shared = shared.clone();
