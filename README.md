@@ -59,6 +59,7 @@ Each control has:
   - OBS source volume
   - a Voicemeeter parameter
   - an **Elgato Wave Link 3** channel, a channel in one mix (e.g. only your Stream mix), or a whole mix (experimental: new and not yet tested with Wave Link itself, so reports are welcome)
+  - a **SteelSeries Sonar** channel (Master, Game, Chat, Media, Aux or Mic), in streamer mode in your personal mix, stream mix or both (experimental, reports welcome)
   - a command
   - the panel's LED brightness
   - **keystrokes as you turn:** one key or scroll step per step turned. Scroll a page, zoom (Ctrl + wheel), change brush size in Photoshop with `]` / `[`, or step through a video timeline.
@@ -95,6 +96,7 @@ Type or paste exe names (`spotify`, `discord.exe`; commas work), or click **Pick
 | Profiles | Switch to a profile · Next profile · Shift: use another profile while the knob is held |
 | OBS | Switch scene · Toggle a source's mute · Toggle recording / streaming |
 | Elgato Wave Link | Toggle mute on a channel, a channel in one mix, or a mix (experimental) |
+| SteelSeries Sonar | Toggle mute on a channel (experimental) |
 | Web & smart home | Web request (Home Assistant, webhooks) with method, URL, headers and body |
 | System | Lock PC · Turn displays off/on (all, or chosen monitors) |
 | Voicemeeter | Run a Voicemeeter script |
@@ -158,7 +160,8 @@ If an app's volume was changed somewhere else (like the Windows mixer), turning 
   | ![Self-test: lights](docs/screenshots/self-test.webp) | ![Self-test: controls](docs/screenshots/self-test-controls.webp) |
 
 - **App:** Start with Windows (quietly, in the tray).
-- **Dials & buttons:** no-volume-jumps, double-press and hold timing, a deadband against slider twitch.
+- **Panel:** lights off while the PC is locked, its screens are off or it's asleep.
+- **Dials & buttons:** apps start at their dial's level when they begin playing sound, no-volume-jumps, double-press and hold timing, a deadband against slider twitch.
 - **Volume popup:** on/off and position.
 - **Backups:** snapshots are taken automatically (at most every 10 minutes, last 10 kept), with one-click Restore.
 - **Updates:** once a day the app checks GitHub for a new version. *Update now* (here or in the tray menu) downloads it, checks it against its published checksum, and restarts into it.
@@ -183,7 +186,7 @@ The original wooden PCPanel has no lights, so lighting and alerts are hidden for
 | A button does two things, or lights and volumes "fight" | The official software is still running in the background (it shows up as `javaw.exe`). The app warns you about this; click **Close it**. |
 | A knob does nothing | Check its caption. If it's dimmed, the app isn't running. The ▶ button tests the action directly. |
 | Discord alert never lights | Turn on Discord's *Settings > Notifications > Enable Taskbar Flashing*. |
-| Something went wrong | *Log > Open log file*. The full history, including any crash details, is in there. |
+| Something went wrong | *Log > Open log file*. The full history, including any crash details, is in there. *Report a problem* (Log tab or tray menu) opens a GitHub issue with the details filled in. |
 
 **Where things are stored:** `%APPDATA%\pcpanel-revive\`
 - `config.json`: your settings. The app reloads it if you edit it by hand.
@@ -208,7 +211,8 @@ PCPanel Revive has no accounts, analytics or telemetry, and your settings stay o
 It connects to other computers only in these cases:
 
 - **Update checks:** once a day, and when you click *Check now*, it asks GitHub (`api.github.com`) whether a newer release exists, and downloads it from GitHub when you click *Update now*. No information about you or your setup is sent. Turn this off in *Settings > Updates*.
-- **Things you set up yourself:** web requests, smart light dimmers and Home Assistant actions go to the addresses you enter; OBS, Elgato Wave Link and Voicemeeter are reached on your own PC.
+- **Things you set up yourself:** web requests, smart light dimmers and Home Assistant actions go to the addresses you enter; OBS, Elgato Wave Link, SteelSeries Sonar and Voicemeeter are reached on your own PC.
+- **Report a problem** only opens a GitHub issue page in your browser with the details filled in; nothing is sent until you post it yourself.
 
 The settings window talks to the tray app over `127.0.0.1` only, which other computers can't reach. For notification alerts it reads Windows' own notification and microphone-in-use records on your PC; they never leave it.
 

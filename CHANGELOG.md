@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Lights off while you're away:** the panel goes dark while the PC is locked, its screens are off or it's asleep, and lights up again when you're back. On by default; turn it off in *Settings*.
+- **New apps start at their dial's level:** when an app starts playing sound, it takes the level of the knob or slider it's mapped to, instead of whatever Windows remembered. On by default; turn it off in *Settings*.
+- **Report a problem** (tray menu and the Log tab) opens a GitHub issue with the version, Windows version, panel and recent log already filled in. You see and edit everything before it's posted.
+- **SteelSeries Sonar (experimental):** knobs and sliders can set a Sonar channel's level (Master, Game, Chat, Media, Aux, Mic; in streamer mode, the personal mix, the stream mix or both), and buttons can toggle its mute. Built from the API other open-source apps use and not yet tried with Sonar itself, so please report how it works.
+- **Safer settings server:** only the settings window the app opens can read or change your settings. Each start makes a new key, so other programs on the PC can't use it.
+
 ## v0.1.2
 
 - **Smoother updates:** after updating, the settings window reopens by itself on the new version (keeping any unsaved change), and the old exe is cleaned up automatically. Before, an open settings window could stay stuck on "Downloading".
