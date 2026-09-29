@@ -1,6 +1,6 @@
 [package]
 name = "pcpanel-revive"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 description = "Lightweight tray replacement for the PCPanel Pro / Mini software on Windows"
 license = "GPL-3.0-or-later"

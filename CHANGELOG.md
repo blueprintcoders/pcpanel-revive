@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## v0.1.3
 
-- **Linux (experimental, first steps):** a Linux build, following nvdweem/PCPanel's approach: the panel through hidraw (with a udev rule), audio through `pactl` (PulseAudio or PipeWire), the tray and settings window through GTK and WebKitGTK. Not yet tried with a panel on a Linux desktop; see the README for what works and what doesn't yet.
+- **Linux (experimental):** a Linux version, following nvdweem/PCPanel's approach: the panel through hidraw (with a udev rule), audio through `pactl` (PulseAudio or PipeWire), the tray and settings window through GTK and WebKitGTK. Nearly everything works, including the volume popup, cheat sheet, visualizer and alerts. Tested with a PCPanel Pro on Ubuntu; see the README for setup and limits.
+- **Fixed:** a panel label too long for its spot could freeze the settings window.
 - **Lights off while you're away:** the panel goes dark while the PC is locked, its screens are off or it's asleep, and lights up again when you're back. On by default; turn it off in *Settings*.
 - **New apps start at their dial's level:** when an app starts playing sound, it takes the level of the knob or slider it's mapped to, instead of whatever Windows remembered. On by default; turn it off in *Settings*.
 - **Report a problem** (tray menu and the Log tab) opens a GitHub issue with the version, Windows version, panel and recent log already filled in. You see and edit everything before it's posted.

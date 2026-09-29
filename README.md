@@ -1,6 +1,6 @@
 # PCPanel Revive
 
-A free, open-source, lightweight replacement for the official PCPanel software on Windows 10/11. It works with the **PCPanel Pro**, the **PCPanel Mini** and the original wooden PCPanel.
+A free, open-source, lightweight replacement for the official PCPanel software on Windows 10/11, with a Linux version too (experimental). It works with the **PCPanel Pro**, the **PCPanel Mini** and the original wooden PCPanel.
 
 It lives in your tray as a single exe under 3 MB using about 14 MB of RAM, with no measurable CPU when idle. It has no Java, no services and no installer.
 
@@ -45,7 +45,7 @@ Moving to a new PC? Copy `%LOCALAPPDATA%\PCPanel Software\save.json` from the ol
 
 ### Linux (experimental)
 
-A Linux build is on its way, following what [nvdweem/PCPanel](https://github.com/nvdweem/PCPanel) does on Linux. It's early: it builds and its audio control works, but it hasn't been tried with a panel on a Linux desktop yet, so reports are very welcome.
+The Linux version follows what [nvdweem/PCPanel](https://github.com/nvdweem/PCPanel) does on Linux. It has been tested with a PCPanel Pro on Ubuntu (XFCE on X11), but not yet across many desktops and distros, so reports are very welcome.
 
 1. **Download** `pcpanel-revive-linux-x86_64` and `70-pcpanel.rules` from the [Releases](../../releases) page, then `chmod +x pcpanel-revive-linux-x86_64`.
 2. **Let it reach the panel without root:**
