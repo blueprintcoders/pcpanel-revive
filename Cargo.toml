@@ -54,6 +54,7 @@ windows = { version = "0.62", features = [
 libc = "0.2"
 webkit2gtk = "2.0" # already under wry; used to bring the settings page back if WebKit's page process stops
 gtk = "0.18" # already under tao and tray-icon; draws the cheat sheet
+x11-dl = "2.21" # already under tao; spots windows asking for attention (loads libX11 at runtime)
 
 [profile.release]
 opt-level = "s"

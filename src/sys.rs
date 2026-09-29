@@ -329,7 +329,7 @@ pub fn toggle_displays(ids: &[String]) -> Result<(), String> {
                     caps = String::from_utf8_lossy(&buf).trim_end_matches(' ').to_string();
                 }
             }
-            if SetVCPFeature(p.hPhysicalMonitor, 0xD6, if on { off_code(&caps) } else { 1 }) != 0 {
+            if SetVCPFeature(p.hPhysicalMonitor, 0xD6, if on { crate::ddc::off_code(&caps) } else { 1 }) != 0 {
                 done += 1;
             }
         }
@@ -339,16 +339,6 @@ pub fn toggle_displays(ids: &[String]) -> Result<(), String> {
         return Err("those displays didn't respond - turn on DDC/CI in the monitor's menu, or use 'All displays'".into());
     }
     Ok(())
-}
-
-/// The DDC/CI power code a monitor accepts for "off": 5 if it lists it, else 4 (standby), else 5.
-fn off_code(caps: &str) -> u32 {
-    let lower = caps.to_lowercase();
-    let codes: Vec<u32> = lower.find("d6(")
-        .and_then(|at| lower[at + 3..].split(')').next())
-        .map(|list| list.split_whitespace().filter_map(|c| u32::from_str_radix(c, 16).ok()).collect())
-        .unwrap_or_default();
-    if codes.contains(&5) || !codes.contains(&4) { 5 } else { 4 }
 }
 
 /// Turn every display off (they wake on mouse/keyboard input).
@@ -442,15 +432,6 @@ pub fn set_autostart(on: bool) {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn picks_the_off_code_the_monitor_supports() {
-        // Real capability strings from an LG MP67 and WK95U: only 1 (on) and 4 (standby).
-        assert_eq!(super::off_code("vcp(02 04 C9D6(01 04)DFE0E1E3(00 01))"), 4);
-        assert_eq!(super::off_code("vcp(02 04 D6(01 04) DF 62)"), 4);
-        assert_eq!(super::off_code("vcp(D6(01 04 05))"), 5);
-        assert_eq!(super::off_code("no d6 listed"), 5);
-    }
-
     #[test]
     fn parses_keys() {
         assert_eq!(super::vk("a"), Some((b'A' as u16, false)));

@@ -16,6 +16,7 @@ mod shellhook;
 #[cfg_attr(target_os = "linux", path = "linux/sys.rs")]
 mod sys;
 mod config;
+mod ddc;
 mod engine;
 mod import;
 mod settings;

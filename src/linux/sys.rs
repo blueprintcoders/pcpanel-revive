@@ -215,13 +215,47 @@ pub fn lock() {
     let _ = tool("loginctl", &["lock-session"]);
 }
 
-/// Picking single displays isn't on Linux yet; the action turns all of them off.
+/// Monitors ddcutil can talk to, as (its display number, "Display 1 · LG HDR WQHD").
 pub fn displays() -> Vec<(String, String)> {
-    vec![]
+    parse_detect(&tool("ddcutil", &["detect", "--brief"]).unwrap_or_default())
 }
 
-pub fn toggle_displays(_ids: &[String]) -> Result<(), String> {
-    monitor_off()
+fn parse_detect(out: &str) -> Vec<(String, String)> {
+    let mut list: Vec<(String, String)> = vec![];
+    for line in out.lines() {
+        if let Some(n) = line.strip_prefix("Display ").map(str::trim) {
+            list.push((n.to_string(), format!("Display {n}")));
+        } else if let (Some(last), Some(m)) = (list.last_mut(), line.trim().strip_prefix("Monitor:")) {
+            // "GSM:LG HDR WQHD:123456" -> the model
+            if let Some(model) = m.trim().split(':').nth(1).filter(|m| !m.is_empty()) {
+                last.1 = format!("{} · {model}", last.1);
+            }
+        }
+    }
+    list
+}
+
+/// Toggle chosen monitors off/on over their cable (DDC/CI power mode, like on Windows), which leaves
+/// the screen layout alone. Needs ddcutil and access to /dev/i2c-* (the i2c group, usually).
+pub fn toggle_displays(ids: &[String]) -> Result<(), String> {
+    let mut done = 0;
+    for n in ids {
+        let d = ["--display", n.as_str()];
+        // "VCP D6 SNC x01": 1 = on.
+        let on = tool("ddcutil", &[&d[..], &["getvcp", "D6", "--terse"]].concat()).map_or(true, |o| o.trim().ends_with("x01"));
+        let code = if on {
+            crate::ddc::off_code(&tool("ddcutil", &[&d[..], &["capabilities", "--verbose"]].concat()).unwrap_or_default())
+        } else {
+            1
+        };
+        if tool("ddcutil", &[&d[..], &["setvcp", "D6", &format!("{code:02x}")]].concat()).is_ok() {
+            done += 1;
+        }
+    }
+    if done == 0 {
+        return Err("those displays didn't respond - install ddcutil, add yourself to the i2c group and turn on DDC/CI in the monitor's menu, or use 'All displays'".into());
+    }
+    Ok(())
 }
 
 /// Screens off: KDE (Wayland or X11), else X11's DPMS.
@@ -292,6 +326,12 @@ fn ask_focused_pid() -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn lists_ddcutil_displays() {
+        let out = "Display 1\n   I2C bus:  /dev/i2c-4\n   DRM connector:           card1-DP-1\n   Monitor:                 GSM:LG HDR WQHD:123456\n\nDisplay 2\n   I2C bus:  /dev/i2c-5\n   Monitor:                 DEL::\n\nInvalid display\n   I2C bus:  /dev/i2c-7\n";
+        assert_eq!(super::parse_detect(out), [("1".to_string(), "Display 1 · LG HDR WQHD".to_string()), ("2".into(), "Display 2".into())]);
+    }
+
     #[test]
     fn parses_keys() {
         assert_eq!(super::keysym("a").as_deref(), Some("a"));

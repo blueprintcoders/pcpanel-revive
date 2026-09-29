@@ -1700,6 +1700,7 @@ dependencies = [
  "windows-core",
  "windows-registry",
  "wry",
+ "x11-dl",
 ]
 
 [[package]]
