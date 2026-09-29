@@ -55,9 +55,9 @@ A Linux build is on its way, following what [nvdweem/PCPanel](https://github.com
 3. **Install what it uses** (Ubuntu/Debian names): `libwebkit2gtk-4.1-0`, `libayatana-appindicator3-1` and `pulseaudio-utils` (for `pactl`; works with PipeWire too). Optional: `xdotool` for keystrokes and the app in front on X11, `playerctl` for media keys.
 4. **Run it.** Its tray icon has the same menu. Your settings live in `~/.config/pcpanel-revive/`. Coming from nvdweem/PCPanel? Its profiles can be imported the same way.
 
-Works on Linux: the panel, lights, profiles and the profile slider, app and device volume and mute (with app names and icons), default device, moving an app to another device, new apps starting at their dial's level, most button actions, OBS, web requests, the settings window, the volume popup (KDE's own, or the desktop's notification bubble elsewhere), the music visualizer, "pulse with audio" lights, notification alerts, lights off while locked or asleep, and updates.
+Works on Linux: the panel, lights, profiles and the profile slider, app and device volume and mute (with app names and icons), default device, moving an app to another device, new apps starting at their dial's level, most button actions, OBS, web requests, the settings window, the volume popup (KDE's own, or the desktop's notification bubble elsewhere), the cheat sheet, the music visualizer, "pulse with audio" lights, notification alerts, lights off while locked or asleep, and updates.
 
-Not on Linux yet: the cheat sheet, taskbar-flash alerts, and picking single displays. Keystrokes and the app in front need X11 (or KDE / Hyprland for the app in front); GNOME on Wayland doesn't let other apps see which window is in front. Voicemeeter, Wave Link and Sonar are Windows-only apps.
+Not on Linux yet: taskbar-flash alerts and picking single displays (the displays action turns them all off). Keystrokes and the app in front need X11 (or KDE / Hyprland for the app in front); GNOME on Wayland doesn't let other apps see which window is in front. Voicemeeter, Wave Link and Sonar are Windows-only apps.
 
 ---
 

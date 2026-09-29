@@ -1685,6 +1685,7 @@ name = "pcpanel-revive"
 version = "0.1.2"
 dependencies = [
  "base64",
+ "gtk",
  "hidapi",
  "libc",
  "serde",

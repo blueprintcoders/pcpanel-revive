@@ -53,6 +53,7 @@ windows = { version = "0.62", features = [
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
 webkit2gtk = "2.0" # already under wry; used to bring the settings page back if WebKit's page process stops
+gtk = "0.18" # already under tao and tray-icon; draws the cheat sheet
 
 [profile.release]
 opt-level = "s"
